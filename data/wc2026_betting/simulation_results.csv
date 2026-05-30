@@ -1,0 +1,18 @@
+scenario_id,status,member_id,before_balance,stake_points,payout_points,after_balance,ledger_delta,settlement_or_error
+SIM-001,PASS,M0001,200,20,0,180,-20,BET_STAKE created
+SIM-002,PASS,M0002,200,10,0,190,-10,SCORE_BET_STAKE created
+SIM-003,PASS,M0003,5,0,0,5,0,ERROR insufficient balance
+SIM-004,PASS,M0001,180,0,0,180,0,ERROR match locked
+SIM-005,PASS,M0001,180,0,0,180,0,ERROR admin required
+SIM-006,PASS,M0001,180,0,50,230,+50,TOPUP by admin
+SIM-007,PASS,HOME_TICKET,200,20,30,210,+10,WDL HOME settlement
+SIM-008,PASS,AWAY_TICKET,200,20,60,240,+40,WDL AWAY settlement
+SIM-009,PASS,HOME_TICKET,200,20,15,195,-5,DRAW fallback home side
+SIM-009,PASS,AWAY_TICKET,200,20,30,210,+10,DRAW fallback away side
+SIM-010,PASS,DRAW_TICKET,200,20,170,350,+150,DRAW explicit settlement
+SIM-011,PASS,SCORE_WINNER,200,10,50,240,+40,SCORE exact settlement
+SIM-012,PASS,SCORE_LOSER,200,10,0,190,-10,carryover to final_jackpot
+SIM-013,PASS,FINAL_SCORE_WINNER,200,10,70,260,+60,final jackpot settlement
+SIM-014,PASS,ADMIN,0,0,0,0,0,ERROR already settled
+SIM-015,PASS,M0001,230,0,0,230,0,subject resolved to actor
+SIM-016,PASS,M0002,190,0,0,190,0,subject resolved to named member

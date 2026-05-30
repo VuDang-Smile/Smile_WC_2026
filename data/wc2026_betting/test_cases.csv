@@ -1,0 +1,32 @@
+case_id,area,scenario,input,expected_result
+TC-001,member,Admin registers new member,"REGISTER_MEMBER Nam nam@company.com Tech",member active with 200 balance and TOPUP ledger
+TC-002,member,Duplicate email rejected,"REGISTER_MEMBER Nam2 nam@company.com Tech",no member row and clear duplicate error
+TC-003,security,Non-admin topup rejected,"member asks topup 50",no ledger row no balance change
+TC-004,wdl,Valid HOME bet before kickoff,"M0001 HOME 1 ticket",stake -20 ledger and balance decreases
+TC-005,wdl,Bet after kickoff rejected,"M0001 HOME after locked_at",no bet no ledger
+TC-006,wdl,Insufficient balance rejected,"M0001 999 tickets",no bet no ledger
+TC-007,wdl,HOME wins with HOME and AWAY pools,"home 10 tickets away 5 tickets result HOME",HOME tickets each net +10 using user example
+TC-008,wdl,AWAY wins with HOME and AWAY pools,"home 10 tickets away 5 tickets result AWAY",AWAY tickets each net +40 using user example
+TC-009,wdl,Draw with no DRAW tickets fallback split,"home 10 tickets away 5 tickets result DRAW",HOME gets 15 total per ticket and AWAY gets 30 total per ticket
+TC-010,wdl,Draw with DRAW tickets,"home 10 draw 2 away 5 result DRAW",DRAW tickets split losing pool
+TC-011,wdl,No winning WDL tickets,"only HOME tickets result AWAY",losing pool carry/refund policy recorded as no winner settlement; no divide by zero
+TC-012,score,Valid score bet before kickoff,"M0001 2-1 one ticket",stake -10 ledger and balance decreases
+TC-013,score,Multiple same score winners,"5 tickets pick 2-1 20 tickets other result 2-1",pool 250 split 50 per winning ticket
+TC-014,score,No exact score winner,"no ticket matches result",full score pool added to final_jackpot
+TC-015,score,Final uses jackpot,"final score winners exist and jackpot > 0",pool includes jackpot and match stakes
+TC-016,settlement,Idempotent settlement,"SETTLE_MATCH twice",second call rejected no duplicate payouts
+TC-017,ledger,Balance equals ledger sum,"after many actions",members.current_balance equals sum ledger per member
+TC-018,data,CSV parse and required headers,"all csv files",all parse with expected columns
+TC-019,teams,Team list has 48 slots,"teams.csv",3 qualified hosts plus 45 pending slots
+TC-020,api,Fixture refresh preserves admin result,"refresh after result entered",admin score not overwritten
+TC-021,refund,Cancelled match refunds stakes,"REFUND_MATCH before settlement",stakes returned and bets marked refunded
+TC-022,permissions,Member can view but cannot edit sheets,"viewer tries edit",Drive permission blocks edit
+TC-023,rounding,Payout remainder handled,"pool not divisible by winners",integer remainder goes to jackpot/house rule ledger
+TC-024,validation,Negative score rejected,"score -1 2",no bet and validation error
+TC-025,validation,Unknown match rejected,"match_id bad",no bet and validation error
+TC-026,google_chat,Google Chat mention without subject uses sender,"@SmileAI đặt Brazil thắng trận WC2026-0001 from users/111",subject resolves to sender member_id
+TC-027,google_chat,Self words use sender,"@SmileAI xem điểm của mình from users/111",subject resolves to sender member_id
+TC-028,google_chat,Explicit member overrides sender,"@SmileAI xem điểm của Linh from users/111",subject resolves to Linh member_id
+TC-029,google_chat,Non-admin cannot place bet for another member,"@SmileAI đặt cho Linh Brazil thắng from users/111",request rejected unless actor admin
+TC-030,permission,Workspace manager counts as admin,"workspace manager sends @SmileAI nạp 50 point cho Nam",request accepted if actor is Workspace/space manager
+TC-031,permission,Space manager role counts as admin,"Google Chat membership.role=ROLE_MANAGER sends admin command",request accepted as manager even if members.is_admin is false
