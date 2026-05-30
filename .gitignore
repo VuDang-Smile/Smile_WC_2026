@@ -1,0 +1,21 @@
+.openclaw/
+.secret/
+.git/
+
+# OpenClaw workspace metadata
+AGENTS.md
+SOUL.md
+USER.md
+TOOLS.md
+HEARTBEAT.md
+IDENTITY.md
+WORKSPACE.md
+meta/
+googlechat_members.json
+GOOGLECHAT_MENTIONS.md
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
