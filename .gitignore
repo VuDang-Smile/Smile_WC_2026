@@ -19,3 +19,7 @@ GOOGLECHAT_MENTIONS.md
 Thumbs.db
 *.swp
 *.swo
+
+# Python
+__pycache__/
+*.pyc

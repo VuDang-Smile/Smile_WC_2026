@@ -1,8 +1,14 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-from src.google_chat_context import build_context, resolve_subject_member_id, ChatActor
+from pathlib import Path
+import sys
 
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from src.google_chat_context import build_context, resolve_subject_member_id, ChatActor
 
 MEMBERS = [
     {
@@ -30,22 +36,18 @@ MEMBERS = [
     },
 ]
 
-
 def test_default_subject_is_actor() -> None:
     actor = ChatActor("users/111", "Nam", "nam@company.com")
     assert resolve_subject_member_id("đặt Brazil thắng trận WC2026-0001", actor, MEMBERS) == "M0001"
-
 
 def test_self_words_subject_is_actor() -> None:
     actor = ChatActor("users/111", "Nam", "nam@company.com")
     assert resolve_subject_member_id("xem điểm của mình", actor, MEMBERS) == "M0001"
 
-
 def test_explicit_member_overrides_actor() -> None:
     actor = ChatActor("users/111", "Nam", "nam@company.com")
     assert resolve_subject_member_id("xem điểm của Linh", actor, MEMBERS) == "M0002"
     assert resolve_subject_member_id("xem điểm M0002", actor, MEMBERS) == "M0002"
-
 
 def test_event_context_strips_bot_mention() -> None:
     event = {
@@ -62,7 +64,6 @@ def test_event_context_strips_bot_mention() -> None:
     assert context.text_without_bot_mention == "đặt tỷ số 2-1 trận WC2026-0001"
     assert context.space_name == "spaces/AAA"
 
-
 def test_workspace_manager_is_manager() -> None:
     event = {
         "user": {"name": "users/333", "displayName": "Manager", "email": "manager@company.com"},
@@ -70,7 +71,6 @@ def test_workspace_manager_is_manager() -> None:
         "space": {"name": "spaces/AAA"},
     }
     assert build_context(event, MEMBERS).actor_is_manager is True
-
 
 def test_space_manager_role_is_manager() -> None:
     event = {
@@ -80,7 +80,6 @@ def test_space_manager_role_is_manager() -> None:
         "membership": {"role": "ROLE_MANAGER"},
     }
     assert build_context(event, MEMBERS).actor_is_manager is True
-
 
 def main() -> int:
     tests = [
@@ -102,7 +101,6 @@ def main() -> int:
             print(f"PASS {test.__name__}")
     print(f"summary: {len(tests) - failures} passed, {failures} failed")
     return 1 if failures else 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

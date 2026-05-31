@@ -32,7 +32,6 @@ def normalize_text(value: str) -> str:
 
 def strip_bot_mention(text: str, bot_names: Iterable[str] = ("SmileAI", "smileai", "OpenClaw", "openclaw")) -> str:
     cleaned = text
-    cleaned = re.sub(r"<users/[^>]+>", " ", cleaned)
     for name in bot_names:
         cleaned = re.sub(rf"@?{re.escape(name)}\b", " ", cleaned, flags=re.IGNORECASE)
     return normalize_text(cleaned)
@@ -127,6 +126,8 @@ def has_self_reference(text: str) -> bool:
 def mentions_member_like_text(text: str, members: list[dict[str, str]]) -> bool:
     lowered = text.lower()
     if re.search(r"\bM\d{4}\b", text, flags=re.IGNORECASE):
+        return True
+    if re.search(r"<users/[^>]+>", text):
         return True
     return any(
         (row.get("email") and row["email"].lower() in lowered)
