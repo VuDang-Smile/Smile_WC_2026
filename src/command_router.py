@@ -32,6 +32,15 @@ class CommandRouter:
                 result = self.service.show_balance(member_id)
                 return self._ok(result)
 
+            match_link = re.search(
+                r"(?:link|sheet)(?:\s+(?:trận|tran))?\s+(WC2026-\d{4}|WC2026-FINAL)",
+                text,
+                flags=re.IGNORECASE,
+            )
+            if match_link:
+                result = self.service.show_match_sheet_link(match_link.group(1).upper())
+                return self._ok(result)
+
             settle_match = re.search(r"(?:settle|chốt kết quả|chot ket qua)\s+(?:trận\s+)?(WC2026-\d{4}|WC2026-FINAL)", text, flags=re.IGNORECASE)
             if settle_match:
                 if not context.actor_is_manager:
@@ -97,7 +106,7 @@ class CommandRouter:
                 )
                 return self._ok(result)
 
-            return RoutedReply(False, "Chưa hiểu lệnh. Hiện hỗ trợ: xem điểm, đặt thắng/hòa/thua, đặt tỷ số, settle trận.", "UNKNOWN", {"text": text})
+            return RoutedReply(False, "Chưa hiểu lệnh. Hiện hỗ trợ: xem điểm, link trận, đặt đội thắng, đặt tỷ số, settle trận.", "UNKNOWN", {"text": text})
         except BettingError as exc:
             return RoutedReply(False, str(exc), "ERROR", {"text": text})
 
@@ -105,7 +114,7 @@ class CommandRouter:
     def _wdl_pick_from_phrase(team_or_side: str, side_word: str) -> str:
         side = side_word.casefold().strip()
         if side in {"hòa", "hoa", "draw"}:
-            return "DRAW"
+            raise BettingError("Không được đặt Hòa. Chỉ đặt đội thắng: đội chủ nhà hoặc đội khách.")
         if side in {"đội khách", "doi khach"}:
             return "AWAY"
         if side in {"đội chủ nhà", "doi chu nha"}:

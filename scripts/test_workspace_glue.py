@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import os
 import shutil
 import sys
 import tempfile
@@ -23,6 +24,7 @@ SEED_FILES = [
     "admin_actions.csv",
     "match_settlements.csv",
     "final_jackpot.csv",
+    "match_sheet_links.csv",
 ]
 
 MEMBERS = [
@@ -224,6 +226,28 @@ def test_router_handles_score_event() -> None:
     assert reply.ok is True
     assert reply.intent == "PLACE_SCORE_BET"
 
+def test_router_handles_match_link_event() -> None:
+    store = make_temp_store()
+    router = CommandRouter(BettingService(store))
+    previous = os.environ.get("SMILE_BET_MATCH_BETS_SPREADSHEET_ID")
+    os.environ["SMILE_BET_MATCH_BETS_SPREADSHEET_ID"] = "seed-spreadsheet-id"
+    event = {
+        "user": {"name": "users/111", "displayName": "Nam", "email": "nam@company.com"},
+        "message": {"text": "@SmileAI link trận WC2026-0013", "thread": {"name": "spaces/AAA/threads/BBB"}, "createTime": "2026-05-31T01:00:00Z"},
+        "space": {"name": "spaces/AAA"},
+    }
+    try:
+        reply = router.handle_event(event, MEMBERS)
+        assert reply.ok is True
+        assert reply.intent == "SHOW_MATCH_SHEET_LINK"
+        assert "https://docs.google.com/spreadsheets/d/seed-spreadsheet-id" in reply.message
+        assert "WC2026-0013" in reply.message
+    finally:
+        if previous is None:
+            os.environ.pop("SMILE_BET_MATCH_BETS_SPREADSHEET_ID", None)
+        else:
+            os.environ["SMILE_BET_MATCH_BETS_SPREADSHEET_ID"] = previous
+
 
 def test_router_handles_transfer_event() -> None:
     store = make_temp_store()
@@ -286,6 +310,7 @@ def main() -> int:
         test_transfer_points_updates_both_balances,
         test_router_handles_balance_event,
         test_router_handles_score_event,
+        test_router_handles_match_link_event,
         test_router_handles_transfer_event,
         test_router_handles_transfer_event_with_google_chat_mention,
         test_router_handles_settle_event,

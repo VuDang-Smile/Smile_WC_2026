@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal, ROUND_DOWN
 import json
+import os
 from pathlib import Path
 import re
 from typing import Iterable
@@ -40,6 +41,35 @@ class BettingService:
             intent="SHOW_BALANCE",
             reply_text=f"Số dư hiện tại {member_id}: {self._fmt_points(balance)} point.",
             data={"member_id": member_id, "balance": str(balance)},
+        )
+
+    def show_match_sheet_link(self, match_id: str) -> CommandResult:
+        match = self._get_match(match_id)
+        link_row = self._get_match_sheet_link(match_id)
+        url = (link_row.get("sheet_url", "") if link_row else "").strip()
+        if not url:
+            workbook_id = os.environ.get("SMILE_BET_MATCH_BETS_SPREADSHEET_ID", "").strip()
+            if workbook_id:
+                url = f"https://docs.google.com/spreadsheets/d/{workbook_id}"
+        if not url:
+            raise BettingError(
+                f"Chưa có link sheet cho trận {match_id}. Cần chạy export/upload sheet trận trước."
+            )
+
+        reply = (
+            f"Link sheet trận {match_id}: {match.get('home_team', '')} vs {match.get('away_team', '')} - {url}"
+        )
+        return CommandResult(
+            intent="SHOW_MATCH_SHEET_LINK",
+            reply_text=reply,
+            data={
+                "match_id": match_id,
+                "home_team": match.get("home_team", ""),
+                "away_team": match.get("away_team", ""),
+                "sheet_url": url,
+                "sheet_gid": link_row.get("sheet_gid", "") if link_row else "",
+                "spreadsheet_id": link_row.get("spreadsheet_id", "") if link_row else workbook_id,
+            },
         )
 
     def place_wdl_bet(self, member_id: str, match_id: str, pick: str, ticket_count: int) -> CommandResult:
@@ -680,6 +710,16 @@ class BettingService:
                 return row
         raise BettingError(f"Không tìm thấy trận {match_id}.")
 
+    def _get_match_sheet_link(self, match_id: str) -> dict[str, str] | None:
+        file_name = "match_sheet_links.csv"
+        path = self.store.data_dir / file_name
+        if not path.exists():
+            return None
+        for row in self.store.read_rows(file_name):
+            if row.get("match_id") == match_id:
+                return row
+        return None
+
     def _ensure_match_open(self, match: dict[str, str]) -> None:
         if (match.get("status") or "").upper() not in {"", "SCHEDULED"}:
             raise BettingError(f"Không ghi cược. Trận {match.get('match_id', '')} không ở trạng thái mở.")
@@ -710,7 +750,7 @@ class BettingService:
     def _normalize_pick(self, pick: str, match: dict[str, str]) -> str:
         lowered = self._normalize_text(pick)
         if lowered in DRAW_ALIASES:
-            return "DRAW"
+            raise BettingError("Không được đặt Hòa. Chỉ đặt đội thắng: đội chủ nhà hoặc đội khách.")
         if lowered in HOME_ALIASES or lowered == self._normalize_text(match.get("home_team", "")):
             return "HOME"
         if lowered in AWAY_ALIASES or lowered == self._normalize_text(match.get("away_team", "")):
