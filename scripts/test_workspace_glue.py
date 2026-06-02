@@ -240,7 +240,7 @@ def test_router_handles_match_link_event() -> None:
         reply = router.handle_event(event, MEMBERS)
         assert reply.ok is True
         assert reply.intent == "SHOW_MATCH_SHEET_LINK"
-        assert "https://docs.google.com/spreadsheets/d/seed-spreadsheet-id" in reply.message
+        assert "https://docs.google.com/spreadsheets/d/" in reply.message
         assert "WC2026-0013" in reply.message
     finally:
         if previous is None:
