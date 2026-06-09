@@ -84,6 +84,259 @@ def write_match_sheet_links(path: Path, spreadsheet_id: str, sheets_metadata: li
         writer.writeheader()
         writer.writerows(sorted(rows, key=lambda row: row["match_id"]))
 
+def rgb(red: int, green: int, blue: int) -> dict[str, float]:
+    return {
+        "red": red / 255,
+        "green": green / 255,
+        "blue": blue / 255,
+    }
+
+def bordered_sides(color: dict[str, float], style: str = "SOLID") -> dict[str, object]:
+    border = {"style": style, "colorStyle": {"rgbColor": color}}
+    return {
+        "borders": {
+            "top": border,
+            "bottom": border,
+            "left": border,
+            "right": border,
+        }
+    }
+
+def row_range(sheet_id: int, start: int, end: int, start_col: int = 0, end_col: int = 11) -> dict[str, object]:
+    return {
+        "sheetId": sheet_id,
+        "startRowIndex": start,
+        "endRowIndex": end,
+        "startColumnIndex": start_col,
+        "endColumnIndex": end_col,
+    }
+
+def build_match_sheet_format_requests(sheet_id: int, values: list[list[str]]) -> list[dict[str, object]]:
+    if not values:
+        return []
+
+    requests: list[dict[str, object]] = [
+        {
+            "updateSheetProperties": {
+                "properties": {
+                    "sheetId": sheet_id,
+                    "gridProperties": {"frozenRowCount": 1},
+                },
+                "fields": "gridProperties.frozenRowCount",
+            }
+        },
+        {
+            "repeatCell": {
+                "range": row_range(sheet_id, 0, 1),
+                "cell": {
+                    "userEnteredFormat": {
+                        "backgroundColorStyle": {"rgbColor": rgb(32, 33, 36)},
+                        "textFormat": {"bold": True, "foregroundColorStyle": {"rgbColor": rgb(255, 255, 255)}},
+                        "horizontalAlignment": "CENTER",
+                    }
+                },
+                "fields": "userEnteredFormat(backgroundColorStyle,textFormat,horizontalAlignment)",
+            }
+        },
+        {
+            "updateDimensionProperties": {
+                "range": {"sheetId": sheet_id, "dimension": "COLUMNS", "startIndex": 0, "endIndex": 11},
+                "properties": {"pixelSize": 140},
+                "fields": "pixelSize",
+            }
+        },
+        {
+            "updateDimensionProperties": {
+                "range": {"sheetId": sheet_id, "dimension": "COLUMNS", "startIndex": 2, "endIndex": 3},
+                "properties": {"pixelSize": 220},
+                "fields": "pixelSize",
+            }
+        },
+        {
+            "updateDimensionProperties": {
+                "range": {"sheetId": sheet_id, "dimension": "COLUMNS", "startIndex": 3, "endIndex": 5},
+                "properties": {"pixelSize": 240},
+                "fields": "pixelSize",
+            }
+        },
+        {
+            "updateDimensionProperties": {
+                "range": {"sheetId": sheet_id, "dimension": "COLUMNS", "startIndex": 7, "endIndex": 10},
+                "properties": {"pixelSize": 110},
+                "fields": "pixelSize",
+            }
+        },
+        {
+            "updateDimensionProperties": {
+                "range": {"sheetId": sheet_id, "dimension": "COLUMNS", "startIndex": 10, "endIndex": 11},
+                "properties": {"pixelSize": 180},
+                "fields": "pixelSize",
+            }
+        },
+    ]
+
+    section_fill = rgb(232, 240, 254)
+    header_fill = rgb(243, 244, 246)
+    border_color = rgb(189, 193, 198)
+    title_fill = rgb(219, 68, 55)
+
+    for row_index, row in enumerate(values[1:], start=1):
+        section = row[0] if len(row) > 0 else ""
+        member_id = row[1] if len(row) > 1 else ""
+        if section == "THÔNG TIN TRẬN":
+            requests.append(
+                {
+                    "repeatCell": {
+                        "range": row_range(sheet_id, row_index, row_index + 1),
+                        "cell": {
+                            "userEnteredFormat": {
+                                "backgroundColorStyle": {"rgbColor": title_fill},
+                                "textFormat": {"bold": True, "foregroundColorStyle": {"rgbColor": rgb(255, 255, 255)}},
+                                "wrapStrategy": "WRAP",
+                            }
+                        },
+                        "fields": "userEnteredFormat(backgroundColorStyle,textFormat,wrapStrategy)",
+                    }
+                }
+            )
+            continue
+
+        if section in {"KÈO THẮNG/THUA", "KÈO TỶ SỐ"} and member_id == "":
+            requests.append(
+                {
+                    "repeatCell": {
+                        "range": row_range(sheet_id, row_index, row_index + 1),
+                        "cell": {
+                            "userEnteredFormat": {
+                                "backgroundColorStyle": {"rgbColor": section_fill},
+                                "textFormat": {"bold": True},
+                            }
+                        },
+                        "fields": "userEnteredFormat(backgroundColorStyle,textFormat)",
+                    }
+                }
+            )
+            continue
+
+        if member_id == "member_id":
+            requests.append(
+                {
+                    "repeatCell": {
+                        "range": row_range(sheet_id, row_index, row_index + 1),
+                        "cell": {
+                            "userEnteredFormat": {
+                                "backgroundColorStyle": {"rgbColor": header_fill},
+                                "textFormat": {"bold": True},
+                                **bordered_sides(border_color),
+                            }
+                        },
+                        "fields": "userEnteredFormat(backgroundColorStyle,textFormat,borders)",
+                    }
+                }
+            )
+            continue
+
+        if section in {"KÈO THẮNG/THUA", "KÈO TỶ SỐ"} and any(cell for cell in row[1:]):
+            requests.append(
+                {
+                    "repeatCell": {
+                        "range": row_range(sheet_id, row_index, row_index + 1),
+                        "cell": {
+                            "userEnteredFormat": {
+                                "wrapStrategy": "WRAP",
+                                "verticalAlignment": "MIDDLE",
+                                **bordered_sides(border_color),
+                            }
+                        },
+                        "fields": "userEnteredFormat(wrapStrategy,verticalAlignment,borders)",
+                    }
+                }
+            )
+
+    return requests
+
+def build_index_sheet_format_requests(sheet_id: int, values: list[list[str]]) -> list[dict[str, object]]:
+    if not values:
+        return []
+
+    header_fill = rgb(32, 33, 36)
+    row_fill = rgb(255, 255, 255)
+    alt_fill = rgb(248, 249, 250)
+    border_color = rgb(218, 220, 224)
+    row_count = len(values)
+
+    requests: list[dict[str, object]] = [
+        {
+            "updateSheetProperties": {
+                "properties": {
+                    "sheetId": sheet_id,
+                    "gridProperties": {"frozenRowCount": 1},
+                },
+                "fields": "gridProperties.frozenRowCount",
+            }
+        },
+        {
+            "repeatCell": {
+                "range": row_range(sheet_id, 0, 1, 0, len(values[0])),
+                "cell": {
+                    "userEnteredFormat": {
+                        "backgroundColorStyle": {"rgbColor": header_fill},
+                        "textFormat": {"bold": True, "foregroundColorStyle": {"rgbColor": rgb(255, 255, 255)}},
+                        "horizontalAlignment": "CENTER",
+                        "wrapStrategy": "WRAP",
+                        **bordered_sides(border_color),
+                    }
+                },
+                "fields": "userEnteredFormat(backgroundColorStyle,textFormat,horizontalAlignment,wrapStrategy,borders)",
+            }
+        },
+        {
+            "repeatCell": {
+                "range": row_range(sheet_id, 1, row_count, 0, len(values[0])),
+                "cell": {
+                    "userEnteredFormat": {
+                        "backgroundColorStyle": {"rgbColor": row_fill},
+                        "wrapStrategy": "WRAP",
+                        "verticalAlignment": "MIDDLE",
+                        **bordered_sides(border_color),
+                    }
+                },
+                "fields": "userEnteredFormat(backgroundColorStyle,wrapStrategy,verticalAlignment,borders)",
+            }
+        },
+    ]
+
+    for row_index in range(1, row_count, 2):
+        requests.append(
+            {
+                "repeatCell": {
+                    "range": row_range(sheet_id, row_index, row_index + 1, 0, len(values[0])),
+                    "cell": {
+                        "userEnteredFormat": {
+                            "backgroundColorStyle": {"rgbColor": alt_fill},
+                            "wrapStrategy": "WRAP",
+                            "verticalAlignment": "MIDDLE",
+                            **bordered_sides(border_color),
+                        }
+                    },
+                    "fields": "userEnteredFormat(backgroundColorStyle,wrapStrategy,verticalAlignment,borders)",
+                }
+            }
+        )
+
+    column_sizes = [120, 120, 120, 160, 150, 150, 120, 120, 120, 140, 120, 120, 140, 140, 180]
+    for index, pixel_size in enumerate(column_sizes):
+        requests.append(
+            {
+                "updateDimensionProperties": {
+                    "range": {"sheetId": sheet_id, "dimension": "COLUMNS", "startIndex": index, "endIndex": index + 1},
+                    "properties": {"pixelSize": pixel_size},
+                    "fields": "pixelSize",
+                }
+            }
+        )
+    return requests
+
 
 def upload_csv_tabs(sheets, spreadsheet_id: str, csv_dir: Path, clear_existing: bool, links_csv: Path) -> None:
     metadata = sheets.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
@@ -113,6 +366,20 @@ def upload_csv_tabs(sheets, spreadsheet_id: str, csv_dir: Path, clear_existing: 
         body={"valueInputOption": "RAW", "data": value_ranges},
     ).execute()
     metadata = sheets.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
+    existing = {sheet["properties"]["title"]: sheet["properties"]["sheetId"] for sheet in metadata.get("sheets", [])}
+    format_requests: list[dict[str, object]] = []
+    for path in csv_paths:
+        title = sheet_title(path)
+        sheet_id = existing.get(title)
+        if sheet_id is None:
+            continue
+        values = read_csv_values(path)
+        if title == "00_index":
+            format_requests.extend(build_index_sheet_format_requests(sheet_id, values))
+        else:
+            format_requests.extend(build_match_sheet_format_requests(sheet_id, values))
+    if format_requests:
+        sheets.spreadsheets().batchUpdate(spreadsheetId=spreadsheet_id, body={"requests": format_requests}).execute()
     write_match_sheet_links(links_csv, spreadsheet_id, metadata.get("sheets", []))
     for path in csv_paths:
         print(f"Uploaded {path.name} -> {sheet_title(path)}")

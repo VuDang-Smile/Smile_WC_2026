@@ -95,7 +95,7 @@ class Game:
         match = self.matches[match_id]
         if now >= match.kickoff_minute:
             raise ValueError("match locked")
-        if pick not in {"HOME", "DRAW", "AWAY"}:
+        if pick not in {"HOME", "AWAY"}:
             raise ValueError("bad pick")
         stake = WDL_PRICE * tickets
         self._require_balance(member_id, stake)
@@ -136,6 +136,12 @@ class Game:
             return {}
 
         payouts: dict[str, Decimal] = {}
+        home_tickets = sum(b.tickets for b in bets if b.pick == "HOME")
+        away_tickets = sum(b.tickets for b in bets if b.pick == "AWAY")
+        if home_tickets == 0 or away_tickets == 0:
+            self.jackpot += WDL_PRICE * total_tickets
+            match.settled_markets.add("WDL")
+            return {}
         if match.result == "DRAW" and not any(b.pick == "DRAW" for b in bets):
             total_pool = WDL_PRICE * total_tickets
             for side in ("HOME", "AWAY"):
@@ -295,14 +301,13 @@ def test_wdl_user_examples() -> None:
     assert payouts["M0011"] == Decimal("30.00")
 
 
-def test_draw_tickets_and_no_winner() -> None:
+def test_draw_bet_rejected_and_no_winner() -> None:
     game = new_game(3)
-    game.place_wdl("M0001", "WC2026-0001", "HOME", 1, now=1)
-    game.place_wdl("M0002", "WC2026-0001", "DRAW", 1, now=1)
-    game.place_wdl("M0003", "WC2026-0001", "AWAY", 1, now=1)
-    game.enter_result("WC2026-0001", 2, 2)
-    payouts = game.settle_wdl("WC2026-0001")
-    assert payouts == {"M0002": Decimal("60.00")}
+    try:
+        game.place_wdl("M0002", "WC2026-0001", "DRAW", 1, now=1)
+        raise AssertionError("DRAW bet should be rejected")
+    except ValueError as exc:
+        assert str(exc) == "bad pick"
 
     game = new_game(1)
     game.place_wdl("M0001", "WC2026-0001", "HOME", 1, now=1)
@@ -333,6 +338,17 @@ def test_score_examples_and_jackpot() -> None:
     assert game.jackpot == Decimal("0")
 
 
+
+def test_wdl_single_sided_pool_moves_to_jackpot() -> None:
+    game = new_game(2)
+    game.place_wdl("M0001", "WC2026-0001", "HOME", 2, now=10)
+    game.enter_result("WC2026-0001", 1, 0)
+    payouts = game.settle_wdl("WC2026-0001")
+    assert payouts == {}
+    assert game.jackpot == Decimal("40")
+    assert game.members["M0001"].balance == Decimal("160")
+    assert game.reconcile() is True
+
 def test_idempotency_and_reconcile() -> None:
     game = new_game(2)
     game.place_wdl("M0001", "WC2026-0001", "HOME", 1, now=1)
@@ -354,7 +370,7 @@ def test_many_randomized_matches() -> None:
         for member_no in range(1, 81):
             member_id = f"M{member_no:04d}"
             if rng.random() < 0.55:
-                pick = rng.choice(["HOME", "DRAW", "AWAY"])
+                pick = rng.choice(["HOME", "AWAY"])
                 tickets = rng.randint(1, 3)
                 try:
                     game.place_wdl(member_id, match_id, pick, tickets, now=match_no)
@@ -382,8 +398,9 @@ TESTS = [
     test_registration_and_permissions,
     test_lock_and_balance_validation,
     test_wdl_user_examples,
-    test_draw_tickets_and_no_winner,
+    test_draw_bet_rejected_and_no_winner,
     test_score_examples_and_jackpot,
+    test_wdl_single_sided_pool_moves_to_jackpot,
     test_idempotency_and_reconcile,
     test_many_randomized_matches,
 ]
@@ -405,3 +422,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

@@ -6,11 +6,15 @@ import json
 import re
 import urllib.request
 from collections import defaultdict
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 
 SOURCE_URL = "https://raw.githubusercontent.com/openfootball/worldcup.json/master/2026/worldcup.json"
 DATA_DIR = Path("data/wc2026_betting")
+SOURCE_TZ = ZoneInfo("America/Mexico_City")
+VN_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 
 CONFEDERATION = {
     "Algeria": "CAF",
@@ -93,6 +97,14 @@ def load_source() -> dict:
     with urllib.request.urlopen(SOURCE_URL, timeout=20) as response:
         return json.load(response)
 
+def to_vietnam_time(date_value: str, time_value: str) -> str:
+    raw = f"{date_value} {time_value}".strip()
+    if not raw:
+        return ""
+    dt = datetime.strptime(raw, "%Y-%m-%d %H:%M")
+    source_dt = dt.replace(tzinfo=SOURCE_TZ)
+    return source_dt.astimezone(VN_TZ).strftime("%Y-%m-%d %H:%M GMT+7")
+
 
 def write_teams(data: dict) -> None:
     groups: dict[str, set[str]] = defaultdict(set)
@@ -147,7 +159,7 @@ def write_matches(data: dict) -> None:
             "stage": match.get("round", ""),
             "group_name": match.get("group", ""),
             "kickoff_at_utc": f"{match.get('date', '')} {match.get('time', '')}".strip(),
-            "kickoff_at_local": "",
+            "kickoff_at_local": to_vietnam_time(match.get('date', ''), match.get('time', '')),
             "home_team": team1,
             "away_team": team2,
             "status": "SCHEDULED",

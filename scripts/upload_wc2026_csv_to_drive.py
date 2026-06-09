@@ -50,23 +50,45 @@ def get_credentials(args: argparse.Namespace):
     return creds
 
 
+def _find_existing_file(service, folder_id: str, name: str) -> dict[str, str] | None:
+    escaped_name = name.replace("'", "\\'")
+    response = service.files().list(
+        q=f"name = '{escaped_name}' and '{folder_id}' in parents and trashed = false",
+        fields="files(id,name,webViewLink)",
+        supportsAllDrives=True,
+        includeItemsFromAllDrives=True,
+    ).execute()
+    files = response.get("files", [])
+    return files[0] if files else None
+
 def upload_csv_files(args: argparse.Namespace) -> None:
     service = build("drive", "v3", credentials=get_credentials(args))
     data_dir = Path(args.data_dir)
     for csv_path in sorted(data_dir.glob("*.csv")):
         metadata = {
             "name": csv_path.name,
-            "parents": [args.folder_id],
             "mimeType": "application/vnd.google-apps.spreadsheet",
         }
         media = MediaFileUpload(str(csv_path), mimetype="text/csv", resumable=False)
+        existing = _find_existing_file(service, args.folder_id, csv_path.name)
+        if existing:
+            updated = service.files().update(
+                fileId=existing["id"],
+                body=metadata,
+                media_body=media,
+                fields="id,name,webViewLink",
+                supportsAllDrives=True,
+            ).execute()
+            print(f"UPDATED {updated['name']}: {updated['webViewLink']}")
+            continue
+
         created = service.files().create(
-            body=metadata,
+            body={**metadata, "parents": [args.folder_id]},
             media_body=media,
             fields="id,name,webViewLink",
             supportsAllDrives=True,
         ).execute()
-        print(f"{created['name']}: {created['webViewLink']}")
+        print(f"CREATED {created['name']}: {created['webViewLink']}")
 
 
 def main() -> None:

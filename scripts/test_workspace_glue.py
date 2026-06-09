@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 from pathlib import Path
+import csv
 import os
 import shutil
 import sys
 import tempfile
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -13,19 +15,48 @@ if str(ROOT) not in sys.path:
 
 from src.betting_service import BettingService
 from src.command_router import CommandRouter
-from src.csv_store import CsvStore
+from src.csv_store import CsvStore, build_store
+from scripts.export_match_bet_sheets import build_match_sheet_rows
 
-SEED_FILES = [
-    "members.csv",
-    "matches.csv",
-    "point_ledger.csv",
-    "win_draw_loss_bets.csv",
-    "score_bets.csv",
-    "admin_actions.csv",
-    "match_settlements.csv",
-    "final_jackpot.csv",
-    "match_sheet_links.csv",
-]
+FILE_HEADERS = {
+    "members.csv": [
+        "member_id", "display_name", "email", "google_chat_user_name", "google_chat_display_name",
+        "is_admin", "is_workspace_manager", "department", "status", "current_balance",
+        "created_at", "updated_at", "notes",
+    ],
+    "matches.csv": [
+        "match_id", "source", "source_match_id", "competition", "stage", "group_name",
+        "kickoff_at_utc", "kickoff_at_local", "home_team", "away_team", "status",
+        "home_score", "away_score", "result", "locked_at", "settled_at", "admin_id", "notes",
+    ],
+    "point_ledger.csv": [
+        "ledger_id", "created_at", "member_id", "change_type", "points_delta", "balance_after",
+        "balance_before", "related_match_id", "related_market", "related_bet_id", "admin_id", "reason",
+        "actor_member_id", "counterparty_member_id", "match_home_team", "match_away_team",
+        "ticket_count", "unit_points", "pick", "predicted_score", "settlement_id",
+    ],
+    "win_draw_loss_bets.csv": [
+        "bet_id", "created_at", "member_id", "match_id", "pick", "ticket_count", "points_staked",
+        "status", "locked_at", "settlement_id", "payout_points", "net_points", "notes",
+    ],
+    "score_bets.csv": [
+        "bet_id", "created_at", "member_id", "match_id", "predicted_home_score", "predicted_away_score",
+        "ticket_count", "points_staked", "status", "locked_at", "settlement_id", "payout_points",
+        "net_points", "carryover_points", "notes",
+    ],
+    "admin_actions.csv": [
+        "action_id", "created_at", "admin_id", "action_type", "target_type", "target_id", "points_delta", "reason",
+    ],
+    "match_settlements.csv": [
+        "settlement_id", "settled_at", "match_id", "market", "result_key", "total_staked_points",
+        "winning_staked_points", "losing_staked_points", "winner_ticket_count", "payout_per_ticket",
+        "carryover_points", "admin_id", "status", "notes",
+    ],
+    "final_jackpot.csv": [
+        "entry_id", "created_at", "source_match_id", "points_delta", "balance_after", "reason", "settlement_id", "admin_id",
+    ],
+    "match_sheet_links.csv": ["match_id", "spreadsheet_id", "sheet_gid", "sheet_url"],
+}
 
 MEMBERS = [
     {
@@ -49,9 +80,10 @@ MEMBERS = [
 
 def make_temp_store() -> CsvStore:
     tmp_root = Path(tempfile.mkdtemp(prefix="wc2026-glue-"))
-    seed_dir = ROOT / "data" / "wc2026_betting"
-    for name in SEED_FILES:
-        shutil.copy(seed_dir / name, tmp_root / name)
+    for name, headers in FILE_HEADERS.items():
+        with (tmp_root / name).open("w", encoding="utf-8", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=headers)
+            writer.writeheader()
     store = CsvStore(tmp_root)
     store.replace_rows(
         "members.csv",
@@ -200,6 +232,98 @@ def test_transfer_points_updates_both_balances() -> None:
     assert len(ledger) == 2
     assert {row["change_type"] for row in ledger} == {"TRANSFER_OUT", "TRANSFER_IN"}
 
+def test_admin_adjust_points_writes_ledger_and_action() -> None:
+    store = make_temp_store()
+    service = BettingService(store)
+    result = service.admin_adjust_points("M0001", 25, admin_id="users/114436789805633538628", reason="Manual correction")
+    assert result.intent == "ADMIN_ADJUST_POINTS"
+    members = {row["member_id"]: row for row in store.read_rows("members.csv")}
+    assert members["M0001"]["current_balance"] == "225"
+    ledger = store.read_rows("point_ledger.csv")
+    assert len(ledger) == 1
+    assert ledger[0]["change_type"] == "ADMIN_TOPUP"
+    assert ledger[0]["actor_member_id"] == "users/114436789805633538628"
+    actions = store.read_rows("admin_actions.csv")
+    assert len(actions) == 1
+    assert actions[0]["action_type"] == "ADMIN_TOPUP"
+
+def test_match_sheet_rows_keep_settled_bets_inline() -> None:
+    store = make_temp_store()
+    service = BettingService(store)
+    service.place_wdl_bet("M0001", "WC2026-0013", "Brazil", 1)
+    rows = store.read_rows("matches.csv")
+    rows[0]["home_score"] = "2"
+    rows[0]["away_score"] = "1"
+    rows[0]["result"] = "HOME"
+    rows[0]["status"] = "FINISHED"
+    store.replace_rows("matches.csv", rows)
+    service.settle_match("WC2026-0013", admin_id="users/114436789805633538628")
+
+    match = store.read_rows("matches.csv")[0]
+    member_rows = [
+        {
+            "member_id": "M0001",
+            "display_name": "Nam",
+            "email": "nam@company.com",
+            "wdl_entries": [
+                {
+                    "selection": "HOME",
+                    "ticket_count": "1",
+                    "points_staked": "20",
+                    "latest_bet_at": store.read_rows("win_draw_loss_bets.csv")[0]["created_at"],
+                    "status": "SETTLED",
+                    "payout_points": "40",
+                    "net_points": "20",
+                }
+            ],
+            "score_entries": [],
+            "latest_bet_at": store.read_rows("win_draw_loss_bets.csv")[0]["created_at"],
+        }
+    ]
+    sheet_rows = build_match_sheet_rows(
+        match,
+        member_rows,
+        settled_wdl_rows=store.read_rows("win_draw_loss_bets.csv"),
+        settled_score_rows=store.read_rows("score_bets.csv"),
+        settlement_rows=store.read_rows("match_settlements.csv"),
+        members={row["member_id"]: row for row in store.read_rows("members.csv")},
+    )
+    assert any(row["status"] == "SETTLED" and row["payout_points"] == "40" and row["net_points"] == "20" for row in sheet_rows if row["section"] == "KÈO THẮNG/THUA")
+
+def test_public_rows_keep_row_level_score_payouts() -> None:
+    member_rows = [
+        {
+            "member_id": "M0001",
+            "display_name": "Nam",
+            "email": "nam@company.com",
+            "wdl_entries": [],
+            "score_entries": [
+                {"selection": "3-1", "ticket_count": "1", "points_staked": "10", "latest_bet_at": "t1", "status": "SETTLED", "payout_points": "0", "net_points": "-10"},
+                {"selection": "2-0", "ticket_count": "1", "points_staked": "10", "latest_bet_at": "t1", "status": "SETTLED", "payout_points": "60", "net_points": "50"},
+                {"selection": "0-1", "ticket_count": "1", "points_staked": "10", "latest_bet_at": "t1", "status": "SETTLED", "payout_points": "0", "net_points": "-10"},
+            ],
+            "latest_bet_at": "t1",
+        }
+    ]
+    rows = build_match_sheet_rows(
+        {
+            "match_id": "WC2026-0001",
+            "home_team": "Mexico",
+            "away_team": "South Africa",
+            "stage": "Matchday 1",
+            "group_name": "Group A",
+            "kickoff_at_local": "2026-06-12 01:00 GMT+7",
+            "home_score": "2",
+            "away_score": "0",
+            "status": "SETTLED",
+        },
+        member_rows,
+    )
+    score_rows = [row for row in rows if row["section"] == "KÈO TỶ SỐ" and row["member_id"] == "M0001"]
+    assert any(row["selection"] == "3-1" and row["status"] == "SETTLED" and row["payout_points"] == "0" and row["net_points"] == "-10" for row in score_rows)
+    assert any(row["selection"] == "2-0" and row["status"] == "SETTLED" and row["payout_points"] == "60" and row["net_points"] == "50" for row in score_rows)
+    assert any(row["selection"] == "0-1" and row["status"] == "SETTLED" and row["payout_points"] == "0" and row["net_points"] == "-10" for row in score_rows)
+
 
 def test_router_handles_balance_event() -> None:
     store = make_temp_store()
@@ -300,6 +424,55 @@ def test_router_handles_settle_event() -> None:
     assert reply.intent == "SETTLE_MATCH"
     assert "Kết quả WC2026-0013" in reply.message
 
+def test_build_store_csv_mode() -> None:
+    previous_mode = os.environ.get("SMILE_BET_STORE")
+    previous_dir = os.environ.get("SMILE_BET_DATA_DIR")
+    tmp_root = Path(tempfile.mkdtemp(prefix="wc2026-store-"))
+    os.environ["SMILE_BET_STORE"] = "csv"
+    os.environ["SMILE_BET_DATA_DIR"] = str(tmp_root)
+    try:
+        store = build_store()
+        assert isinstance(store, CsvStore)
+        assert store.data_dir == tmp_root
+    finally:
+        if previous_mode is None:
+            os.environ.pop("SMILE_BET_STORE", None)
+        else:
+            os.environ["SMILE_BET_STORE"] = previous_mode
+        if previous_dir is None:
+            os.environ.pop("SMILE_BET_DATA_DIR", None)
+        else:
+            os.environ["SMILE_BET_DATA_DIR"] = previous_dir
+
+
+
+def test_mutating_actions_run_post_action_checks() -> None:
+    store = make_temp_store()
+    service = BettingService(store)
+    with patch.object(service, "_run_post_action_checks") as mock_checks:
+        service.place_wdl_bet("M0001", "WC2026-0013", "Brazil", 1)
+        mock_checks.assert_called_once_with(match_id="WC2026-0013", touched_member_ids=["M0001"])
+
+
+def test_audit_hook_builds_expected_command() -> None:
+    store = make_temp_store()
+    service = BettingService(store)
+    service.workspace_root = ROOT
+    previous = os.environ.get("SMILE_BET_AUDIT_AFTER_ACTION")
+    os.environ["SMILE_BET_AUDIT_AFTER_ACTION"] = "true"
+    with patch("src.betting_service.subprocess.run") as mock_run:
+        with patch.dict(os.environ, {"SMILE_BET_GOOGLE_SERVICE_ACCOUNT": ".secret/googlechat-service-account.json"}, clear=False):
+            service._audit_if_enabled(match_id="WC2026-0013", touched_member_ids=["M0001", "M0002"])
+    assert mock_run.call_args is not None
+    cmd = mock_run.call_args.kwargs["args"] if "args" in mock_run.call_args.kwargs else mock_run.call_args.args[0]
+    assert str(service.workspace_root / "scripts" / "audit_openclaw_state.py") in cmd
+    assert "--match-id" in cmd
+    assert "WC2026-0013" in cmd
+    assert cmd.count("--member-id") == 2
+    if previous is None:
+        os.environ.pop("SMILE_BET_AUDIT_AFTER_ACTION", None)
+    else:
+        os.environ["SMILE_BET_AUDIT_AFTER_ACTION"] = previous
 
 def main() -> int:
     tests = [
@@ -308,12 +481,18 @@ def main() -> int:
         test_place_score_bet_updates_balance_and_ledger,
         test_settle_match_announces_winners_and_marks_rows,
         test_transfer_points_updates_both_balances,
+        test_admin_adjust_points_writes_ledger_and_action,
+        test_match_sheet_rows_keep_settled_bets_inline,
+        test_public_rows_keep_row_level_score_payouts,
         test_router_handles_balance_event,
         test_router_handles_score_event,
         test_router_handles_match_link_event,
         test_router_handles_transfer_event,
         test_router_handles_transfer_event_with_google_chat_mention,
         test_router_handles_settle_event,
+        test_mutating_actions_run_post_action_checks,
+        test_audit_hook_builds_expected_command,
+        test_build_store_csv_mode,
     ]
     failures = 0
     for test in tests:

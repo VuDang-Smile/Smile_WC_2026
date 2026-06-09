@@ -7,12 +7,16 @@ import json
 import os
 from pathlib import Path
 import re
+import subprocess
+import sys
 from typing import Iterable
+from zoneinfo import ZoneInfo
 
-from src.csv_store import CsvStore
+from src.csv_store import CsvStore, RowStore, build_store
 
 WDL_PRICE = Decimal("20")
 SCORE_PRICE = Decimal("10")
+VN_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 DRAW_ALIASES = {"hoa", "hòa", "draw", "x"}
 HOME_ALIASES = {"home", "chu nha", "chủ nhà", "doi chu nha", "đội chủ nhà", "thang", "thắng"}
 AWAY_ALIASES = {"away", "doi khach", "đội khách"}
@@ -30,8 +34,8 @@ class CommandResult:
 
 
 class BettingService:
-    def __init__(self, store: CsvStore | None = None) -> None:
-        self.store = store or CsvStore()
+    def __init__(self, store: RowStore | None = None) -> None:
+        self.store = store or build_store()
         self.workspace_root = self.store.data_dir.parent.parent
 
     def show_balance(self, member_id: str) -> CommandResult:
@@ -109,23 +113,26 @@ class BettingService:
                 "notes": "Created by workspace betting_service",
             },
         )
-        self.store.append_row(
-            "point_ledger.csv",
-            {
-                "ledger_id": ledger_id,
-                "created_at": created_at,
-                "member_id": member_id,
-                "change_type": "BET_STAKE",
-                "points_delta": f"-{self._fmt_points(stake)}",
-                "balance_after": self._fmt_points(balance_after),
-                "related_match_id": match_id,
-                "related_market": "WDL",
-                "related_bet_id": bet_id,
-                "admin_id": "",
-                "reason": f"{normalized_pick} x{ticket_count}",
-            },
+        self._append_ledger_entry(
+            ledger_id=ledger_id,
+            created_at=created_at,
+            member_id=member_id,
+            change_type="BET_STAKE",
+            points_delta=-stake,
+            balance_before=balance_before,
+            balance_after=balance_after,
+            related_match_id=match_id,
+            related_market="WDL",
+            related_bet_id=bet_id,
+            reason=f"{normalized_pick} x{ticket_count}",
+            actor_member_id=member_id,
+            match=match,
+            ticket_count=ticket_count,
+            unit_points=WDL_PRICE,
+            pick=normalized_pick,
         )
         self._update_member_balance(member_id, balance_after)
+        self._run_post_action_checks(match_id=match_id, touched_member_ids=[member_id])
         return CommandResult(
             intent="PLACE_WDL_BET",
             reply_text=(
@@ -182,23 +189,27 @@ class BettingService:
                 "notes": "Created by workspace betting_service",
             },
         )
-        self.store.append_row(
-            "point_ledger.csv",
-            {
-                "ledger_id": ledger_id,
-                "created_at": created_at,
-                "member_id": member_id,
-                "change_type": "BET_STAKE",
-                "points_delta": f"-{self._fmt_points(stake)}",
-                "balance_after": self._fmt_points(balance_after),
-                "related_match_id": match_id,
-                "related_market": "SCORE",
-                "related_bet_id": bet_id,
-                "admin_id": "",
-                "reason": f"{home_score}-{away_score} x{ticket_count}",
-            },
+        self._append_ledger_entry(
+            ledger_id=ledger_id,
+            created_at=created_at,
+            member_id=member_id,
+            change_type="BET_STAKE",
+            points_delta=-stake,
+            balance_before=balance_before,
+            balance_after=balance_after,
+            related_match_id=match_id,
+            related_market="SCORE",
+            related_bet_id=bet_id,
+            reason=f"{home_score}-{away_score} x{ticket_count}",
+            actor_member_id=member_id,
+            match=match,
+            ticket_count=ticket_count,
+            unit_points=SCORE_PRICE,
+            predicted_home_score=home_score,
+            predicted_away_score=away_score,
         )
         self._update_member_balance(member_id, balance_after)
+        self._run_post_action_checks(match_id=match_id, touched_member_ids=[member_id])
         return CommandResult(
             intent="PLACE_SCORE_BET",
             reply_text=(
@@ -249,6 +260,8 @@ class BettingService:
             },
         )
         self._mark_settlement_announced(match_id, created_at)
+        touched_member_ids = sorted(set(wdl["winner_member_ids"] + score["winner_member_ids"]))
+        self._run_post_action_checks(match_id=match_id, touched_member_ids=touched_member_ids)
 
         return CommandResult(
             intent="SETTLE_MATCH",
@@ -288,37 +301,34 @@ class BettingService:
         to_balance_after = to_balance_before + transfer_amount
         transfer_ref = self._next_id("admin_actions.csv", "action_id", f"XFER-{from_member_id}-{to_member_id}")
 
-        self.store.append_row(
-            "point_ledger.csv",
-            {
-                "ledger_id": self._next_ledger_id(),
-                "created_at": created_at,
-                "member_id": from_member_id,
-                "change_type": "TRANSFER_OUT",
-                "points_delta": f"-{self._fmt_points(transfer_amount)}",
-                "balance_after": self._fmt_points(from_balance_after),
-                "related_match_id": "",
-                "related_market": "TRANSFER",
-                "related_bet_id": transfer_ref,
-                "admin_id": "",
-                "reason": f"Chuyển cho {to_member_id}",
-            },
+        self._append_ledger_entry(
+            ledger_id=self._next_ledger_id(),
+            created_at=created_at,
+            member_id=from_member_id,
+            change_type="TRANSFER_OUT",
+            points_delta=-transfer_amount,
+            balance_before=from_balance,
+            balance_after=from_balance_after,
+            related_market="TRANSFER",
+            related_bet_id=transfer_ref,
+            reason=f"Chuyển cho {to_member_id}",
+            actor_member_id=from_member_id,
+            counterparty_member_id=to_member_id,
         )
-        self.store.append_row(
-            "point_ledger.csv",
-            {
-                "ledger_id": self._next_ledger_id(),
-                "created_at": created_at,
-                "member_id": to_member_id,
-                "change_type": "TRANSFER_IN",
-                "points_delta": self._fmt_points(transfer_amount),
-                "balance_after": self._fmt_points(to_balance_after),
-                "related_match_id": "",
-                "related_market": "TRANSFER",
-                "related_bet_id": transfer_ref,
-                "admin_id": from_member_id,
-                "reason": f"Nhận từ {from_member_id}",
-            },
+        self._append_ledger_entry(
+            ledger_id=self._next_ledger_id(),
+            created_at=created_at,
+            member_id=to_member_id,
+            change_type="TRANSFER_IN",
+            points_delta=transfer_amount,
+            balance_before=to_balance_before,
+            balance_after=to_balance_after,
+            related_market="TRANSFER",
+            related_bet_id=transfer_ref,
+            admin_id=from_member_id,
+            reason=f"Nhận từ {from_member_id}",
+            actor_member_id=from_member_id,
+            counterparty_member_id=from_member_id,
         )
         self._update_member_balance(from_member_id, from_balance_after)
         self._update_member_balance(to_member_id, to_balance_after)
@@ -335,6 +345,7 @@ class BettingService:
                 "reason": f"from={from_member_id}",
             },
         )
+        self._run_post_action_checks(touched_member_ids=[from_member_id, to_member_id])
         return CommandResult(
             intent="TRANSFER_POINTS",
             reply_text=(
@@ -348,6 +359,73 @@ class BettingService:
                 "from_balance_after": str(from_balance_after),
                 "to_balance_after": str(to_balance_after),
                 "transfer_ref": transfer_ref,
+            },
+        )
+
+    def admin_adjust_points(
+        self,
+        member_id: str,
+        points_delta: Decimal,
+        admin_id: str,
+        reason: str,
+    ) -> CommandResult:
+        points_delta = Decimal(str(points_delta))
+        if points_delta == 0:
+            raise BettingError("Điều chỉnh point phải khác 0.")
+        if not admin_id:
+            raise BettingError("Thiếu admin_id cho điều chỉnh point.")
+        member = self._get_member(member_id)
+        balance_before = self._member_balance(member)
+        balance_after = balance_before + points_delta
+        if balance_after < 0:
+            raise BettingError(
+                f"Không đủ point sau điều chỉnh. Hiện có {self._fmt_points(balance_before)}, delta {self._fmt_points(points_delta)}."
+            )
+        created_at = self._now_iso()
+        ref = self._next_id("admin_actions.csv", "action_id", f"A-POINT-{member_id}")
+        change_type = "ADMIN_TOPUP" if points_delta > 0 else "ADMIN_DEBIT"
+        self._append_ledger_entry(
+            ledger_id=self._next_ledger_id(),
+            created_at=created_at,
+            member_id=member_id,
+            change_type=change_type,
+            points_delta=points_delta,
+            balance_before=balance_before,
+            balance_after=balance_after,
+            related_market="ADMIN_ADJUST",
+            related_bet_id=ref,
+            admin_id=admin_id,
+            reason=reason,
+            actor_member_id=admin_id,
+        )
+        self._update_member_balance(member_id, balance_after)
+        self.store.append_row(
+            "admin_actions.csv",
+            {
+                "action_id": ref,
+                "created_at": created_at,
+                "admin_id": admin_id,
+                "action_type": change_type,
+                "target_type": "member",
+                "target_id": member_id,
+                "points_delta": self._fmt_points(points_delta),
+                "reason": reason,
+            },
+        )
+        self._run_post_action_checks(touched_member_ids=[member_id])
+        return CommandResult(
+            intent="ADMIN_ADJUST_POINTS",
+            reply_text=(
+                f"Đã điều chỉnh {self._fmt_points(points_delta)} point cho {member_id}. "
+                f"Số dư mới: {self._fmt_points(balance_after)}."
+            ),
+            data={
+                "member_id": member_id,
+                "points_delta": self._fmt_points(points_delta),
+                "balance_before": self._fmt_points(balance_before),
+                "balance_after": self._fmt_points(balance_after),
+                "admin_id": admin_id,
+                "action_id": ref,
             },
         )
 
@@ -373,8 +451,15 @@ class BettingService:
         payout_per_ticket = Decimal("0")
         notes = ""
 
+        wdl_carryover = Decimal("0")
         if bets:
-            if result_key == "DRAW" and not any((row.get("pick") or "").upper() == "DRAW" for row in bets):
+            home_tickets = sum(self._to_int(row.get("ticket_count")) for row in bets if (row.get("pick") or "").upper() == "HOME")
+            away_tickets = sum(self._to_int(row.get("ticket_count")) for row in bets if (row.get("pick") or "").upper() == "AWAY")
+            if home_tickets == 0 or away_tickets == 0:
+                wdl_carryover = total_staked
+                notes = "WDL single-sided pool moved to jackpot"
+                self._append_jackpot_entry(match_id, wdl_carryover, settlement_id, admin_id, created_at, reason="Carryover from WDL single-sided pool")
+            elif result_key == "DRAW" and not any((row.get("pick") or "").upper() == "DRAW" for row in bets):
                 half_pool = total_staked / Decimal("2")
                 for side in ("HOME", "AWAY"):
                     side_rows = [row for row in bets if (row.get("pick") or "").upper() == side]
@@ -422,7 +507,7 @@ class BettingService:
                 "losing_staked_points": self._fmt_points(losing_staked),
                 "winner_ticket_count": str(winner_ticket_count),
                 "payout_per_ticket": self._fmt_points(payout_per_ticket),
-                "carryover_points": "0",
+                "carryover_points": self._fmt_points(wdl_carryover),
                 "admin_id": admin_id,
                 "status": "SETTLED",
                 "notes": notes,
@@ -446,6 +531,7 @@ class BettingService:
             "winner_member_ids": sorted(payouts.keys()),
             "payouts": payouts,
             "winner_ticket_count": winner_ticket_count,
+            "carryover": wdl_carryover,
         }
 
     def _settle_score_market(
@@ -545,7 +631,12 @@ class BettingService:
         wdl_mentions = self._member_mentions(wdl["winner_member_ids"], members)
         score_mentions = self._member_mentions(score["winner_member_ids"], members)
         parts = [result_line]
-        parts.append(f"Thắng kèo WDL: {', '.join(wdl_mentions)}." if wdl_mentions else "Kèo WDL: chưa có người thắng.")
+        if wdl_mentions:
+            parts.append(f"Thắng kèo WDL: {', '.join(wdl_mentions)}.")
+        elif wdl.get("carryover", Decimal("0")) and Decimal(wdl["carryover"]) > 0:
+            parts.append("Kèo WDL nghiêng 1 phía. Pool chuyển jackpot.")
+        else:
+            parts.append("Kèo WDL: chưa có người thắng.")
         if score_mentions:
             parts.append(f"Thắng kèo tỷ số: {', '.join(score_mentions)}. Point đã cộng vào tài khoản.")
         elif score.get("carryover", Decimal("0")) and Decimal(score["carryover"]) > 0:
@@ -598,24 +689,80 @@ class BettingService:
         for member_id, delta in payouts.items():
             member = members.get(member_id) or self._get_member(member_id)
             balance_after = self._member_balance(member) + delta
-            self.store.append_row(
-                "point_ledger.csv",
-                {
-                    "ledger_id": self._next_ledger_id(),
-                    "created_at": created_at,
-                    "member_id": member_id,
-                    "change_type": "PAYOUT",
-                    "points_delta": self._fmt_points(delta),
-                    "balance_after": self._fmt_points(balance_after),
-                    "related_match_id": match_id,
-                    "related_market": market,
-                    "related_bet_id": settlement_id,
-                    "admin_id": admin_id,
-                    "reason": settlement_id,
-                },
+            self._append_ledger_entry(
+                ledger_id=self._next_ledger_id(),
+                created_at=created_at,
+                member_id=member_id,
+                change_type="PAYOUT",
+                points_delta=delta,
+                balance_before=self._member_balance(member),
+                balance_after=balance_after,
+                related_match_id=match_id,
+                related_market=market,
+                related_bet_id=settlement_id,
+                admin_id=admin_id,
+                reason=settlement_id,
+                actor_member_id=admin_id,
+                match=self._get_match(match_id),
+                settlement_id=settlement_id,
             )
             self._update_member_balance(member_id, balance_after)
             members[member_id] = self._get_member(member_id)
+
+    def _append_ledger_entry(
+        self,
+        *,
+        ledger_id: str,
+        created_at: str,
+        member_id: str,
+        change_type: str,
+        points_delta: Decimal,
+        balance_before: Decimal,
+        balance_after: Decimal,
+        related_match_id: str = "",
+        related_market: str = "",
+        related_bet_id: str = "",
+        admin_id: str = "",
+        reason: str = "",
+        actor_member_id: str = "",
+        counterparty_member_id: str = "",
+        match: dict[str, str] | None = None,
+        ticket_count: int | None = None,
+        unit_points: Decimal | None = None,
+        pick: str = "",
+        predicted_home_score: int | None = None,
+        predicted_away_score: int | None = None,
+        settlement_id: str = "",
+    ) -> None:
+        self.store.append_row(
+            "point_ledger.csv",
+            {
+                "ledger_id": ledger_id,
+                "created_at": created_at,
+                "member_id": member_id,
+                "change_type": change_type,
+                "points_delta": self._fmt_points(points_delta),
+                "balance_before": self._fmt_points(balance_before),
+                "balance_after": self._fmt_points(balance_after),
+                "related_match_id": related_match_id,
+                "related_market": related_market,
+                "related_bet_id": related_bet_id,
+                "admin_id": admin_id,
+                "reason": reason,
+                "actor_member_id": actor_member_id,
+                "counterparty_member_id": counterparty_member_id,
+                "match_home_team": (match or {}).get("home_team", ""),
+                "match_away_team": (match or {}).get("away_team", ""),
+                "ticket_count": str(ticket_count or ""),
+                "unit_points": self._fmt_points(unit_points) if unit_points is not None else "",
+                "pick": pick,
+                "predicted_score": (
+                    f"{predicted_home_score}-{predicted_away_score}"
+                    if predicted_home_score is not None and predicted_away_score is not None else ""
+                ),
+                "settlement_id": settlement_id,
+            },
+        )
 
     def _replace_wdl_bets(self, match_id: str, settlement_id: str, payouts: dict[str, Decimal]) -> None:
         rows = self.store.read_rows("win_draw_loss_bets.csv")
@@ -712,8 +859,7 @@ class BettingService:
 
     def _get_match_sheet_link(self, match_id: str) -> dict[str, str] | None:
         file_name = "match_sheet_links.csv"
-        path = self.store.data_dir / file_name
-        if not path.exists():
+        if not self.store.exists(file_name):
             return None
         for row in self.store.read_rows(file_name):
             if row.get("match_id") == match_id:
@@ -764,7 +910,80 @@ class BettingService:
 
     def _next_ledger_id(self) -> str:
         rows = self.store.read_rows("point_ledger.csv")
-        return f"L-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}-{len(rows)+1:04d}"
+        return f"L-{datetime.now(VN_TZ).strftime('%Y%m%d%H%M%S')}-{len(rows)+1:04d}"
+
+    def _run_post_action_checks(
+        self,
+        match_id: str | None = None,
+        touched_member_ids: list[str] | None = None,
+    ) -> None:
+        self._sync_public_workbook_if_enabled()
+        self._audit_if_enabled(match_id=match_id, touched_member_ids=touched_member_ids or [])
+
+    def _audit_if_enabled(
+        self,
+        match_id: str | None = None,
+        touched_member_ids: list[str] | None = None,
+    ) -> None:
+        if os.environ.get("SMILE_BET_AUDIT_AFTER_ACTION", "true").strip().lower() in {"0", "false", "no"}:
+            return
+        service_account = (
+            os.environ.get("SMILE_BET_GOOGLE_SERVICE_ACCOUNT", "").strip()
+            or os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "").strip()
+        )
+        if not service_account:
+            return
+        script_path = self.workspace_root / "scripts" / "audit_openclaw_state.py"
+        if not script_path.exists():
+            return
+        command = [sys.executable, str(script_path), "--service-account", service_account]
+        if match_id:
+            command.extend(["--match-id", match_id])
+        for member_id in touched_member_ids or []:
+            command.extend(["--member-id", member_id])
+        subprocess.run(
+            command,
+            check=True,
+            cwd=self.workspace_root,
+            env=os.environ.copy(),
+        )
+
+    def _sync_public_workbook_if_enabled(self) -> None:
+        if not self._uses_google_sheets_runtime():
+            return
+        if os.environ.get("SMILE_BET_SYNC_PUBLIC_WORKBOOK", "true").strip().lower() in {"0", "false", "no"}:
+            return
+        service_account = (
+            os.environ.get("SMILE_BET_GOOGLE_SERVICE_ACCOUNT", "").strip()
+            or os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "").strip()
+        )
+        if not service_account:
+            return
+        public_workbook_id = os.environ.get(
+            "SMILE_BET_PUBLIC_WORKBOOK_ID",
+            "1wAT0jpXw3_920kHYfemqFMUXWFgzFpv85mc8GNk_lNY",
+        ).strip()
+        if not public_workbook_id:
+            return
+        script_path = self.workspace_root / "scripts" / "sync_public_match_workbook.py"
+        if not script_path.exists():
+            return
+        subprocess.run(
+            [
+                sys.executable,
+                str(script_path),
+                "--service-account",
+                service_account,
+                "--public-workbook-id",
+                public_workbook_id,
+            ],
+            check=True,
+            cwd=self.workspace_root,
+            env=os.environ.copy(),
+        )
+
+    def _uses_google_sheets_runtime(self) -> bool:
+        return self.store.__class__.__name__ == "GoogleSheetsStore"
 
     @staticmethod
     def _fmt_points(value: Decimal) -> str:
@@ -781,7 +1000,7 @@ class BettingService:
 
     @staticmethod
     def _now_iso() -> str:
-        return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+        return datetime.now(VN_TZ).replace(microsecond=0).isoformat()
 
     @staticmethod
     def _to_int(value: object) -> int:

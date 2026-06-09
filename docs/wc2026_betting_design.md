@@ -24,6 +24,8 @@ python3 scripts/import_openfootball_wc2026.py
 
 ## Files
 
+Time rule: user-facing time and stored operation timestamps should use Vietnam time (`Asia/Ho_Chi_Minh`, GMT+7). Fixture rows may retain source time in `kickoff_at_utc`, but runtime display should prefer `kickoff_at_local`.
+
 - `members.csv`: member profile and balance cache.
 - `point_ledger.csv`: append-only point ledger. Every topup, bet stake, refund, payout, correction must create row.
 - `matches.csv`: 104-match fixture list, lock time, scores, result.
@@ -59,7 +61,7 @@ reason=Initial WC 2026 pool
 ### Win / Draw / Loss Market
 
 - Ticket price: 20 points.
-- Choices: `HOME`, `DRAW`, `AWAY`.
+- Choices: `HOME`, `AWAY`. Members cannot place `DRAW` tickets.
 - Bets lock at kickoff time.
 - Stake immediately subtracts points from member balance.
 - Settlement pays winning side from losing side pool.
@@ -75,7 +77,7 @@ payout_points_per_ticket = 20 + payout_per_ticket
 net_points_per_ticket = payout_per_ticket
 ```
 
-Draw handling for requested example: if result is draw, `DRAW` tickets win if they exist. If no one picked `DRAW`, split all staked points equally across `HOME` and `AWAY` pools by side stake weight. To exactly match your example with only A/B bets and no DRAW tickets:
+Draw handling: if result is draw, split all staked points equally across `HOME` and `AWAY` pools by side ticket count. To match your example:
 
 ```text
 home_pool_return = total_staked / 2
@@ -84,7 +86,7 @@ home_payout_per_ticket = home_pool_return / home_ticket_count
 away_payout_per_ticket = away_pool_return / away_ticket_count
 ```
 
-Recommendation: use explicit `DRAW` choice for clean football betting. Keep fallback split rule only for legacy A/B-only bets.
+`DRAW` rows may still settle for legacy data, but new bets must be `HOME` or `AWAY`.
 
 If no ticket matches the result, do not divide by zero. Record the pool as unclaimed in settlement notes for admin decision, or create an explicit refund/carryover rule before launch.
 
