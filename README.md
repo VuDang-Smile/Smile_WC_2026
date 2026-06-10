@@ -291,6 +291,15 @@ Theo member:
 python3 scripts/audit_openclaw_state.py --member-id M0001 --member-id M0002
 ```
 
+## Promo automation
+
+- Bài promo/report phải hiển thị giờ Việt Nam: `Asia/Ho_Chi_Minh`
+- Không dùng ảnh tự gen hoặc mockup render nội bộ cho promo/report mặc định
+- Với bài report/newspaper, ưu tiên banner web thật có framing rõ 2 đội
+- Trigger OpenClaw nên bắt đầu ở chế độ tạo `promo_jobs`, chưa auto-send
+- Workbook queue promo hiện tại: `1qeOZZU6WafIR3WZysMIiC1cbtoudKq2-I-Lg28svAJ8`
+- Nên cấu hình qua env: `SMILE_BET_PROMO_WORKBOOK_ID` và sheet mặc định `promo_jobs`
+
 ## Quy trình vận hành
 
 1. cập nhật member seed và lịch trận

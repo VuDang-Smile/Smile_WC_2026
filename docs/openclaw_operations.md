@@ -91,3 +91,91 @@ SmileAI should apply only fixture/team metadata. It must not overwrite `home_sco
 - Script audit chuan: `python3 scripts/audit_openclaw_state.py --match-id <MATCH_ID> --member-id <MEMBER_ID>`
 - Audit phai check toi thieu: row vua ghi ton tai, balance khop ledger, public tab khop pool va bet rows, split columns `status/payout_points/net_points` dung theo tung row, score payout dung tung row, timestamp van hanh dung gio Viet Nam.
 - Neu audit fail, phai coi action la loi van hanh va bao chi tiet sheet/rule lech.
+
+## Promo Automation Trigger
+
+OpenClaw should support automatic promo-trigger preparation for hype/report workflows.
+
+### Promo queue workbook
+
+Use dedicated Google Sheets workbook for promo queue and approval flow:
+- workbook id: `1qeOZZU6WafIR3WZysMIiC1cbtoudKq2-I-Lg28svAJ8`
+- default tab: `promo_jobs`
+- recommended env: `SMILE_BET_PROMO_WORKBOOK_ID=1qeOZZU6WafIR3WZysMIiC1cbtoudKq2-I-Lg28svAJ8`
+
+### Nightly roundup schedule
+
+Primary roundup trigger should run at `16:00 Asia/Ho_Chi_Minh` each work day.
+It prepares one new thread/post for matches from late night to next morning, with default match window:
+- `next day 00:00` to `next day 09:00` Vietnam time
+- practical focus remains the overnight block users care about, usually `02:00-09:00`
+
+
+### Trigger goals
+
+- pre-match teaser for important fixtures
+- newspaper/report package for selected headline matches
+- post-settlement recap after official settle
+
+### Recommended trigger points
+
+1. Fixture-based pre-match trigger
+- run on schedule in Vietnam time
+- candidate windows:
+  - `T-24h`: long preview or newspaper/report package
+  - `T-3h`: short reminder post
+  - `T-30m`: final call-to-action post
+
+2. Data-change trigger
+- after `settle_match` succeeds and audit passes
+- prepare recap payload for that `match_id`
+
+3. Manual admin trigger
+- command example: `admin: tạo bài promo trận WC2026-0001`
+- command example: `admin: tạo bài report trận WC2026-0001`
+
+### Trigger guardrails
+
+- Only trigger after fixture identity is stable.
+- Use Vietnam time only in generated payloads and user-facing text.
+- Do not use generated images. Promo payload must ask for real web banner selection only.
+- For report/newspaper trigger, preferred banner must clearly frame both teams.
+- Never mark promo task complete if image package is missing.
+
+### Minimal automation design
+
+1. Use workbook `SMILE_BET_PROMO_WORKBOOK_ID` and tab `promo_jobs` as queue.
+2. Scheduled OpenClaw worker scans `matches` at `16:00 Asia/Ho_Chi_Minh` and enqueues one `night_roundup` job for the next overnight window.
+3. Optional secondary worker can still enqueue single-match jobs such as `preview_report` or `recap`.
+4. Worker skips jobs already completed for same `promo_type + scheduled_date + scheduled_window`.
+5. Job payload includes:
+   - `scheduled_date`
+   - `promo_type` such as `night_roundup`, `preview_short`, `preview_report`, `recap`
+   - `window_start_local`, `window_end_local` in `Asia/Ho_Chi_Minh`
+   - `match_ids`
+   - optional spotlight fields for featured matches
+   - `priority`
+6. Promo generation step uses `betting-hype-writer` skill rules.
+7. Publish/send only after human approval, unless later policy explicitly allows auto-post.
+
+### Suggested first implementation
+
+- Phase 1: create `promo_jobs` records in workbook queue only, no auto-send.
+- Phase 2: admin command lists pending promo jobs and asks OpenClaw to draft content.
+- Phase 3: optional Google Chat push after approval flow is defined.
+
+### Suggested `promo_jobs` columns
+
+- `job_id`
+- `scheduled_date`
+- `promo_type`
+- `window_start_local`
+- `window_end_local`
+- `match_ids`
+- `featured_match_ids`
+- `status`
+- `thread_key`
+- `draft_text`
+- `image_package`
+- `posted_at`
+- `note`
