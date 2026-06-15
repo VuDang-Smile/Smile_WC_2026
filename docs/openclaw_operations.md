@@ -60,18 +60,17 @@ Member only sends natural-language request to SmileAI. SmileAI validates role, r
 
 ## Fixture And Team Refresh
 
-Preferred source: API-Football.
+Preferred free source: ESPN public scoreboard.
 
 ```text
-GET https://v3.football.api-sports.io/fixtures?league=1&season=2026
-GET https://v3.football.api-sports.io/teams?league=1&season=2026
+GET https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard?dates=20260611-20260719
 ```
 
 Result sync command:
 
 ```text
-python3 scripts/sync_fixture_results_api_football.py
-python3 scripts/sync_fixture_results_api_football.py --apply
+python3 scripts/sync_fixture_results.py
+python3 scripts/sync_fixture_results.py --apply
 ```
 
 Rules for result sync:
@@ -81,10 +80,10 @@ Rules for result sync:
 - may update only match status, source_match_id, home_score, away_score, result, notes sync stamp
 - must not overwrite rows with settled_at
 - must not overwrite admin-entered scores unless explicit allow-overwrite flag is passed
-- should match fixture by numeric source_match_id first, then notes.api_fixture_id, then home/away/day fallback
+- should match fixture by numeric source_match_id first, then notes.fixture_id, then home/away/day fallback
 ```
 
-Fallback/manual source: FIFA public match centre and qualified-team list.
+Fallback/manual source: FIFA public match centre, OpenFootball seed, and API-Football if paid key exists.
 
 Refresh should produce a diff before applying:
 

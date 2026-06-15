@@ -959,21 +959,18 @@ class BettingService:
     def _sync_fixture_results_if_enabled(self) -> int:
         if os.environ.get("SMILE_BET_SYNC_FIXTURE_RESULTS", "true").strip().lower() in {"0", "false", "no"}:
             return 0
-        api_key = os.environ.get("API_FOOTBALL_KEY", "").strip()
-        if not api_key:
-            return 0
-        script_path = self.workspace_root / "scripts" / "sync_fixture_results_api_football.py"
+        script_path = self.workspace_root / "scripts" / "sync_fixture_results.py"
         if not script_path.exists():
             return 0
         result = subprocess.run(
-            [sys.executable, str(script_path), "--api-key", api_key, "--apply"],
+            [sys.executable, str(script_path), "--apply"],
             check=True,
             cwd=self.workspace_root,
             env=os.environ.copy(),
             capture_output=True,
             text=True,
         )
-        match = re.search(r"APPLY_OK updates=(\d+)", result.stdout)
+        match = re.search(r"APPLY_OK source=.* updates=(\d+)", result.stdout)
         return int(match.group(1)) if match else 0
 
     def _audit_if_enabled(

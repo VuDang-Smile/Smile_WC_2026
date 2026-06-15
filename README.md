@@ -54,7 +54,7 @@ Nguyên tắc triển khai hiện tại:
 
 - `scripts/run_tests.sh`: chạy toàn bộ test và mô phỏng
 - `scripts/import_openfootball_wc2026.py`: import lịch và đội từ openfootball
-- `scripts/sync_fixture_results_api_football.py`: lấy status và kết quả trận từ API-Football, hỗ trợ dry-run/apply
+- `scripts/sync_fixture_results.py`: lấy status và kết quả trận từ nguồn free public, mặc định ESPN không cần key
 - `scripts/upload_wc2026_csv_to_drive.py`: upload CSV thành Google Sheets
 - `scripts/sync_public_match_workbook.py`: sync workbook public theo từng trận
 - `scripts/audit_openclaw_state.py`: audit hậu kiểm trạng thái sheet
@@ -112,7 +112,6 @@ export SMILE_BET_SHEET_MAP="members.csv=Members,matches.csv=Matches,point_ledger
 export SMILE_BET_PUBLIC_WORKBOOK_ID=1wAT0jpXw3_920kHYfemqFMUXWFgzFpv85mc8GNk_lNY
 export SMILE_BET_SYNC_PUBLIC_WORKBOOK=true
 export SMILE_BET_AUDIT_AFTER_ACTION=true
-export API_FOOTBALL_KEY=<API_FOOTBALL_KEY>
 ```
 
 Pipeline chuẩn sau mỗi action có thay đổi dữ liệu:
@@ -122,25 +121,30 @@ Pipeline chuẩn sau mỗi action có thay đổi dữ liệu:
 3. chạy `scripts/audit_openclaw_state.py`
 4. chỉ báo thành công khi audit pass
 
-### Đồng bộ kết quả trận từ API-Football
+### Đồng bộ kết quả trận từ nguồn free public
 
 Mặc định script chạy ở chế độ dry-run, chỉ in diff:
 
 ```bash
-python3 scripts/sync_fixture_results_api_football.py
+python3 scripts/sync_fixture_results.py
 ```
 
 Áp dụng diff vào `matches.csv` hoặc Google Sheets store hiện tại:
 
 ```bash
-python3 scripts/sync_fixture_results_api_football.py --apply
+python3 scripts/sync_fixture_results.py --apply
 ```
 
 Guard hiện có:
 
 - không đè row đã có `settled_at`
 - không đè kết quả admin đã nhập nếu không truyền `--allow-overwrite-admin-results`
-- ưu tiên match theo `source_match_id` số, rồi `notes` có `api_fixture_id=...`, rồi fallback theo `home_team + away_team + kickoff day`
+- ưu tiên match theo `source_match_id` số, rồi `notes` có `fixture_id=...`, rồi fallback theo `home_team + away_team + kickoff day`
+
+Nguồn mặc định:
+
+- ESPN scoreboard public, không cần API key
+- có thể bật `--source api-football` nếu sau này muốn dùng nguồn trả phí/có key
 
 ## Quy tắc dữ liệu
 

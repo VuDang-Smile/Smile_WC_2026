@@ -47,7 +47,7 @@ python3 scripts/audit_openclaw_state.py
 For result-sync review before write:
 
 ```bash
-python3 scripts/sync_fixture_results_api_football.py
+python3 scripts/sync_fixture_results.py
 ```
 
 ## Failure rule
