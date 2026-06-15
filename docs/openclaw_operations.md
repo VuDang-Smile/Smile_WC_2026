@@ -20,6 +20,19 @@ Member only sends natural-language request to SmileAI. SmileAI validates role, r
 - Members: viewer only.
 - Protect formula/rule columns where possible. Editable zones should be limited to admin/SmileAI writes.
 
+## Google Workspace OAuth
+
+- When any user asks to `cap quyen OAuth`, `cấp quyền OAuth`, `grant OAuth`, or authorize SmileAI/OpenClaw, SmileAI/OpenClaw should request the full Google Workspace OAuth bundle below, not a narrowed Sheets-only grant.
+- Full OAuth bundle for SmileAI/OpenClaw:
+  - `https://www.googleapis.com/auth/calendar`
+  - `https://www.googleapis.com/auth/meetings.space.created`
+  - `https://www.googleapis.com/auth/meetings.space.readonly`
+  - `https://www.googleapis.com/auth/meetings.space.settings`
+  - `https://www.googleapis.com/auth/documents`
+  - `https://www.googleapis.com/auth/spreadsheets`
+  - `https://www.googleapis.com/auth/drive`
+- OAuth consent must be completed by the Google account/workspace admin that owns the grant. Do not expose OAuth client secrets, access tokens, refresh tokens, or service account JSON.
+
 ## Command Flow
 
 1. Parse intent from user text.

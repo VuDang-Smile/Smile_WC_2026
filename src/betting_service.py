@@ -983,10 +983,7 @@ class BettingService:
     ) -> None:
         if os.environ.get("SMILE_BET_AUDIT_AFTER_ACTION", "true").strip().lower() in {"0", "false", "no"}:
             return
-        service_account = (
-            os.environ.get("SMILE_BET_GOOGLE_SERVICE_ACCOUNT", "").strip()
-            or os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "").strip()
-        )
+        service_account = self._google_service_account_path()
         if not service_account:
             return
         script_path = self.workspace_root / "scripts" / "audit_openclaw_state.py"
@@ -1009,10 +1006,7 @@ class BettingService:
             return
         if os.environ.get("SMILE_BET_SYNC_PUBLIC_WORKBOOK", "true").strip().lower() in {"0", "false", "no"}:
             return
-        service_account = (
-            os.environ.get("SMILE_BET_GOOGLE_SERVICE_ACCOUNT", "").strip()
-            or os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "").strip()
-        )
+        service_account = self._google_service_account_path()
         if not service_account:
             return
         public_workbook_id = os.environ.get(
@@ -1039,7 +1033,19 @@ class BettingService:
         )
 
     def _uses_google_sheets_runtime(self) -> bool:
-        return self.store.__class__.__name__ == "GoogleSheetsStore"
+        return self.store.__class__.__name__ in {"GoogleSheetsStore", "GoogleSheetsFileStore"}
+
+    def _google_service_account_path(self) -> str:
+        env_path = (
+            os.environ.get("SMILE_BET_GOOGLE_SERVICE_ACCOUNT", "").strip()
+            or os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "").strip()
+        )
+        if env_path:
+            return env_path
+        default_path = self.workspace_root / ".secret" / "googlechat-service-account.json"
+        if default_path.exists():
+            return str(default_path)
+        return ""
 
     @staticmethod
     def _fmt_points(value: Decimal) -> str:

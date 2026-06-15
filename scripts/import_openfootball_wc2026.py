@@ -6,7 +6,7 @@ import json
 import re
 import urllib.request
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -97,13 +97,34 @@ def load_source() -> dict:
     with urllib.request.urlopen(SOURCE_URL, timeout=20) as response:
         return json.load(response)
 
-def to_vietnam_time(date_value: str, time_value: str) -> str:
+def parse_kickoff(date_value: str, time_value: str) -> datetime:
     raw = f"{date_value} {time_value}".strip()
     if not raw:
+        raise ValueError("missing kickoff time")
+    match = re.match(r"^(\d{4}-\d{2}-\d{2})\s+(\d{1,2}):(\d{2})(?:\s+UTC([+-])(\d{1,2}))?$", raw)
+    if not match:
+        raise ValueError(f"unsupported kickoff time: {raw}")
+    date_part, hour, minute, sign, offset = match.groups()
+    naive = datetime.strptime(f"{date_part} {hour}:{minute}", "%Y-%m-%d %H:%M")
+    if sign and offset:
+        direction = 1 if sign == "+" else -1
+        tzinfo = timezone(timedelta(hours=direction * int(offset)))
+        return naive.replace(tzinfo=tzinfo)
+    return naive.replace(tzinfo=SOURCE_TZ)
+
+def to_vietnam_time(date_value: str, time_value: str) -> str:
+    try:
+        source_dt = parse_kickoff(date_value, time_value)
+    except ValueError:
         return ""
-    dt = datetime.strptime(raw, "%Y-%m-%d %H:%M")
-    source_dt = dt.replace(tzinfo=SOURCE_TZ)
     return source_dt.astimezone(VN_TZ).strftime("%Y-%m-%d %H:%M GMT+7")
+
+def match_sort_key(indexed_match: tuple[int, dict]) -> tuple[datetime, int]:
+    source_index, match = indexed_match
+    return (
+        parse_kickoff(match.get("date", ""), match.get("time", "")).astimezone(timezone.utc),
+        source_index,
+    )
 
 
 def write_teams(data: dict) -> None:
@@ -146,8 +167,9 @@ def write_teams(data: dict) -> None:
 
 def write_matches(data: dict) -> None:
     rows = []
-    for index, match in enumerate(data["matches"], start=1):
-        source_match_id = f"openfootball-2026-{index:03d}"
+    indexed_matches = list(enumerate(data["matches"], start=1))
+    for index, (source_index, match) in enumerate(sorted(indexed_matches, key=match_sort_key), start=1):
+        source_match_id = f"openfootball-2026-{source_index:03d}"
         match_id = f"WC2026-{index:04d}"
         team1 = match.get("team1", "")
         team2 = match.get("team2", "")

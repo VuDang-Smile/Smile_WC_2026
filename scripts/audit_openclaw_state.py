@@ -60,6 +60,20 @@ def values_to_rows(values: list[list[str]]) -> list[dict[str, str]]:
 def read_public_tab_rows(sheets, spreadsheet_id: str, tab_name: str) -> list[dict[str, str]]:
     return values_to_rows(fetch_values(sheets, spreadsheet_id, f"'{tab_name}'!A:K"))
 
+def read_public_tabs_rows(sheets, spreadsheet_id: str, tab_names: list[str]) -> dict[str, list[dict[str, str]]]:
+    if not tab_names:
+        return {}
+    ranges = [f"'{tab_name}'!A:K" for tab_name in tab_names]
+    result = sheets.spreadsheets().values().batchGet(
+        spreadsheetId=spreadsheet_id,
+        ranges=ranges,
+    ).execute()
+    value_ranges = result.get("valueRanges", [])
+    rows_by_tab: dict[str, list[dict[str, str]]] = {}
+    for tab_name, value_range in zip(tab_names, value_ranges):
+        rows_by_tab[tab_name] = values_to_rows(value_range.get("values", []))
+    return rows_by_tab
+
 
 def to_int(value: str | None) -> int:
     if not value:
@@ -217,6 +231,13 @@ def main() -> int:
     issues: list[AuditIssue] = []
     issues.extend(audit_members_vs_ledger(internal_rows["members.csv"], internal_rows["point_ledger.csv"], target_member_ids))
 
+    try:
+        public_rows_by_match = read_public_tabs_rows(sheets, args.public_workbook_id, sorted(target_match_ids))
+    except Exception as exc:  # noqa: BLE001
+        public_rows_by_match = {}
+        for match_id in sorted(target_match_ids):
+            issues.append(AuditIssue(match_id, f"cannot read public tab batch: {exc}"))
+
     for match_id in sorted(target_match_ids):
         match = matches.get(match_id)
         if not match:
@@ -224,10 +245,9 @@ def main() -> int:
             continue
         wdl_rows = [row for row in internal_rows["win_draw_loss_bets.csv"] if row.get("match_id") == match_id and row.get("status") in {"ACTIVE", "SETTLED"}]
         score_rows = [row for row in internal_rows["score_bets.csv"] if row.get("match_id") == match_id and row.get("status") in {"ACTIVE", "SETTLED"}]
-        try:
-            public_rows = read_public_tab_rows(sheets, args.public_workbook_id, match_id)
-        except Exception as exc:  # noqa: BLE001
-            issues.append(AuditIssue(match_id, f"cannot read public tab: {exc}"))
+        public_rows = public_rows_by_match.get(match_id)
+        if public_rows is None:
+            issues.append(AuditIssue(match_id, "public tab missing from batch response"))
             continue
         issues.extend(audit_match(match, members, wdl_rows, score_rows, public_rows))
 

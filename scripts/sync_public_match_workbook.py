@@ -16,21 +16,13 @@ from googleapiclient.discovery import build
 
 from scripts.export_match_bet_sheets import export_reports
 from scripts.upload_match_bet_sheets_to_google import upload_csv_tabs
+from src.google_sheets_store import DEFAULT_SOURCE_SPREADSHEETS
 
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
 ]
 
-SOURCE_SPREADSHEETS = {
-    "members.csv": "1ugJmw4wODbK7kYkXQ9vEYUDMMBXkZdq1pxd3m4KccHY",
-    "matches.csv": "15-D3OOjpqCbpeX6-riCMzi6jB0wC2tpGhWzNBDM0nUU",
-    "point_ledger.csv": "1fGHn4hXgYXnZ-H02sL98zEm0-RbsYSkeA3uDinlm3QA",
-    "win_draw_loss_bets.csv": "1HjM6tof5kLB4_5wzPfqPscfFdUnUT_ecbVSev4r7V_Q",
-    "score_bets.csv": "1IArjIazapqmwwhndlJuhZs_7wbqqlg5d3F8DZU0ZCcs",
-    "admin_actions.csv": "1d-Q9vTGs4FD_m1UScm_aWyxk0PE17E3WRx7BzWoI_Rw",
-    "match_settlements.csv": "10cH3VfZhZeFowNNT-yoENHLAJcUN2j5UC8gnNCS_JpA",
-    "final_jackpot.csv": "1raO48c2Y6bzOlKP0s_qCTc1HELK4jjbdZp_PdmgdqPA",
-}
+SOURCE_SPREADSHEETS = DEFAULT_SOURCE_SPREADSHEETS
 
 DEFAULT_PUBLIC_WORKBOOK_ID = "1wAT0jpXw3_920kHYfemqFMUXWFgzFpv85mc8GNk_lNY"
 

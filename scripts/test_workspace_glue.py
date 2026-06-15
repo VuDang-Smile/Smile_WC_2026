@@ -465,6 +465,34 @@ def test_build_store_csv_mode() -> None:
         else:
             os.environ["SMILE_BET_DATA_DIR"] = previous_dir
 
+def test_build_store_defaults_to_source_spreadsheets() -> None:
+    env_keys = [
+        "SMILE_BET_STORE",
+        "SMILE_BET_SPREADSHEET_ID",
+        "SMILE_BET_GOOGLE_SERVICE_ACCOUNT",
+        "GOOGLE_APPLICATION_CREDENTIALS",
+        "SMILE_BET_SOURCE_SPREADSHEETS",
+    ]
+    previous = {key: os.environ.get(key) for key in env_keys}
+    for key in env_keys:
+        os.environ.pop(key, None)
+    os.environ["SMILE_BET_GOOGLE_SERVICE_ACCOUNT"] = "/tmp/fake-service-account.json"
+    try:
+        with patch("src.google_sheets_store.Credentials.from_service_account_file"):
+            with patch("src.google_sheets_store.build"):
+                from src.google_sheets_store import GoogleSheetsFileStore
+
+                store = build_store()
+                assert isinstance(store, GoogleSheetsFileStore)
+                assert store.exists("members.csv")
+                assert store.exists("matches.csv")
+    finally:
+        for key, value in previous.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+
 
 
 def test_mutating_actions_run_post_action_checks() -> None:
@@ -515,6 +543,7 @@ def main() -> int:
         test_mutating_actions_run_post_action_checks,
         test_audit_hook_builds_expected_command,
         test_build_store_csv_mode,
+        test_build_store_defaults_to_source_spreadsheets,
     ]
     failures = 0
     for test in tests:

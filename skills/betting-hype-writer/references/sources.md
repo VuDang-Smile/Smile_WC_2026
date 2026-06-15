@@ -55,6 +55,22 @@ Read these local files for product rules:
 - `data/wc2026_betting/teams.csv`
 - `data/wc2026_betting/final_jackpot.csv` when jackpot angle matters
 
+If local fixture files are missing or stale, approved fallback is OpenFootball 2026 seed above.
+
+## Time conversion rule
+
+All user-facing match time must be shown in Vietnam time: `Asia/Ho_Chi_Minh` = `UTC+7`.
+
+When source gives local kickoff like `HH:MM UTC-6`, convert by offset math first, then update date if day rolls over.
+
+Quick reference:
+- `UTC-7 -> Vietnam +14 hours`
+- `UTC-6 -> Vietnam +13 hours`
+- `UTC-5 -> Vietnam +12 hours`
+- `UTC-4 -> Vietnam +11 hours`
+
+Never paste raw source timezone into final Google Chat post unless user explicitly asks for source/local venue time too.
+
 Current rules to state exactly:
 - each new member starts with 200 point
 - win/draw/loss ticket costs 20 point

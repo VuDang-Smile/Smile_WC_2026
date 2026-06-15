@@ -12,6 +12,7 @@ Credential options:
 from __future__ import annotations
 
 import argparse
+import json
 import os
 from pathlib import Path
 
@@ -23,9 +24,40 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 
 
-SCOPES = ["https://www.googleapis.com/auth/drive.file"]
+GOOGLE_WORKSPACE_FULL_OAUTH_SCOPES = [
+    "https://www.googleapis.com/auth/calendar",
+    "https://www.googleapis.com/auth/meetings.space.created",
+    "https://www.googleapis.com/auth/meetings.space.readonly",
+    "https://www.googleapis.com/auth/meetings.space.settings",
+    "https://www.googleapis.com/auth/documents",
+    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/drive",
+]
+SCOPES = GOOGLE_WORKSPACE_FULL_OAUTH_SCOPES
 DEFAULT_FOLDER_ID = "1wUwJNck0WAuR110Jk3tTzjSSHVzGfAO9"
 DEFAULT_SERVICE_ACCOUNT = ".secret/googlechat-service-account.json"
+
+
+def _scope_set(value: object) -> set[str]:
+    if isinstance(value, str):
+        return set(value.split())
+    if isinstance(value, list):
+        return {str(scope) for scope in value}
+    return set()
+
+
+def _has_required_scopes(creds: Credentials) -> bool:
+    granted = _scope_set(getattr(creds, "granted_scopes", None) or getattr(creds, "scopes", None))
+    return bool(granted) and set(SCOPES).issubset(granted)
+
+
+def _token_file_has_required_scopes(token_path: Path) -> bool:
+    try:
+        token = json.loads(token_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    granted = _scope_set(token.get("granted_scopes") or token.get("scopes"))
+    return set(SCOPES).issubset(granted)
 
 
 def get_credentials(args: argparse.Namespace):
@@ -38,10 +70,14 @@ def get_credentials(args: argparse.Namespace):
 
     token_path = Path(args.token)
     creds = None
-    if token_path.exists():
+    if token_path.exists() and _token_file_has_required_scopes(token_path):
         creds = Credentials.from_authorized_user_file(str(token_path), SCOPES)
+        if not _has_required_scopes(creds):
+            creds = None
     if creds and creds.expired and creds.refresh_token:
         creds.refresh(Request())
+        if not _has_required_scopes(creds):
+            creds = None
     if not creds or not creds.valid:
         flow = InstalledAppFlow.from_client_secrets_file(args.client_secret, SCOPES)
         creds = flow.run_local_server(port=0)

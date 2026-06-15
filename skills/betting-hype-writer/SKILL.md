@@ -14,33 +14,53 @@ When user asks for `newspaper`, `bài báo`, `bản tin`, `tin nóng`, `match pr
 Read these before drafting:
 - `skills/betting-hype-writer/references/sources.md`
 - `docs/wc2026_betting_design.md`
-- `data/wc2026_betting/match_bet_sheets/00_index.csv`
+- prefer `data/wc2026_betting/matches.csv` for local fixture truth when present
+- if local fixture file missing/stale, use approved seed in `references/sources.md`
 - `data/wc2026_betting/members.csv` only if member count or mentions matter
 
 ## Workflow
 
 1. Pull tournament framing from official-source notes in `references/sources.md`.
-2. Pull near-term fixtures from `data/wc2026_betting/match_bet_sheets/00_index.csv`.
+2. Pull near-term fixtures from `data/wc2026_betting/matches.csv` when present. If missing, fall back to approved OpenFootball 2026 seed from `references/sources.md`.
 3. Pull game mechanics from `docs/wc2026_betting_design.md`.
-4. Write for Google Chat:
+4. When source time is not already local Vietnam time, convert explicitly to `Asia/Ho_Chi_Minh` before writing.
+   - treat `UTC±N` offset in source as authoritative
+   - conversion rule: Vietnam = UTC+7
+   - examples: `UTC-7 -> +14h`, `UTC-6 -> +13h`, `UTC-5 -> +12h`, `UTC-4 -> +11h`
+   - if converted time crosses midnight, update date too
+5. Write for Google Chat:
    - short hook first
    - 1 theme only
    - concrete CTA
    - short lines, easy skim
-5. For newspaper/article style output, create a web image selection package:
+6. For newspaper/article style output, create a web image selection package:
    - image title
    - source search queries
    - aspect ratio recommendation
    - alt text
    - visual safety notes
    - Vietnam-time kickoff line when match timing matters
-6. If post mentions how to play, keep rules exact:
+7. If post mentions how to play, keep rules exact:
    - WDL ticket = 20 point
    - exact score ticket = 10 point
    - new member starts with 200 point
-7. If timing matters, convert fixture kickoff to Vietnam time (`Asia/Ho_Chi_Minh`) before writing.
 8. Mention match ids explicitly when timing or fixture identity matters.
 9. Do not invent official facts not present in sources.
+10. Audit before sending any fixture/time content:
+   - verify every user-facing kickoff line is Vietnam time, not raw source timezone
+   - spot-check at least 2 matches with manual offset math
+   - if fixture source missing/incomplete, say source used
+   - if confidence low, do not guess
+
+## Verify / audit
+
+Before final answer, run quick self-audit for timing posts:
+- Source file exists and is correct one
+- Source timezone parsed correctly
+- Converted hour correct
+- Converted date correct after rollover
+- Final text labels time as Vietnam time when useful
+- No mixed source-time and Vietnam-time lines in same post
 
 ## Output patterns
 

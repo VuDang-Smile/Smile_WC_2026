@@ -73,6 +73,10 @@ def build_store() -> RowStore:
     if mode == "csv":
         data_dir = os.environ.get("SMILE_BET_DATA_DIR", "").strip()
         return CsvStore(data_dir or DATA_DIR)
+    if mode in {"source_spreadsheets", "file_sheets", "google_file_sheets"}:
+        from src.google_sheets_store import GoogleSheetsFileStore
+
+        return GoogleSheetsFileStore.from_env()
     if mode in {"", "sheets", "google_sheets"}:
         from src.google_sheets_store import GoogleSheetsStore
 

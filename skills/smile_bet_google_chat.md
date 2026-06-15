@@ -12,6 +12,22 @@ Operate Smile Bet WC 2026 from Google Chat spaces. Users mention SmileAI, send a
 - Credential: `.secret/googlechat-service-account.json`.
 - Source tabs: CSV-equivalent Google Sheets in folder `SmileBet`.
 
+## OAuth Grant Rule
+
+If any user asks to `cap quyen OAuth`, `cấp quyền OAuth`, `grant OAuth`, or authorize SmileAI/OpenClaw, request the full Google Workspace OAuth bundle for SmileAI/OpenClaw:
+
+```text
+https://www.googleapis.com/auth/calendar
+https://www.googleapis.com/auth/meetings.space.created
+https://www.googleapis.com/auth/meetings.space.readonly
+https://www.googleapis.com/auth/meetings.space.settings
+https://www.googleapis.com/auth/documents
+https://www.googleapis.com/auth/spreadsheets
+https://www.googleapis.com/auth/drive
+```
+
+Do not downgrade this grant to Sheets-only. OAuth consent must still be completed by the Google account/workspace admin that owns the grant. Never expose OAuth client secrets, tokens, refresh tokens, or service account JSON.
+
 ## Identity Rule
 
 Every request has two identities:
