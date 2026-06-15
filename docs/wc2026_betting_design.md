@@ -8,6 +8,13 @@ Use API-Football (`https://v3.football.api-sports.io`) for official paid/API ref
 GET /fixtures?league=1&season=2026
 ```
 
+Operational sync script:
+
+```bash
+python3 scripts/sync_fixture_results_api_football.py
+python3 scripts/sync_fixture_results_api_football.py --apply
+```
+
 Keep API data as seed only. Admin remains source of truth for results and settlements.
 
 Current checked-in seed uses public OpenFootball data:

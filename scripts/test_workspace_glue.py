@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.betting_service import BettingService
+from src.betting_service import BettingService, CommandResult
 from src.command_router import CommandRouter
 from src.csv_store import CsvStore, build_store
 from scripts.export_match_bet_sheets import build_match_sheet_rows
@@ -424,6 +424,27 @@ def test_router_handles_settle_event() -> None:
     assert reply.intent == "SETTLE_MATCH"
     assert "Kết quả WC2026-0013" in reply.message
 
+def test_router_handles_sync_results_event() -> None:
+    store = make_temp_store()
+    service = BettingService(store)
+    router = CommandRouter(service)
+    with patch.object(service, "sync_results_and_settle_ready_matches") as mock_sync:
+        mock_sync.return_value = CommandResult(
+            intent="SYNC_RESULTS_AND_SETTLE",
+            reply_text="Đã sync API: 1 trận cập nhật. Đã settle: 1 trận.",
+            data={"updated_match_count": 1, "settled_match_count": 1, "settled_match_ids": ["WC2026-0013"]},
+        )
+        event = {
+            "user": {"name": "users/114436789805633538628", "displayName": "Đặng Nguyên Vũ", "email": "vu.dang@smilesoftware.org"},
+            "membership": {"role": "ROLE_MANAGER"},
+            "message": {"text": "@SmileAI cập nhật kết quả", "thread": {"name": "spaces/AAA/threads/BBB"}, "createTime": "2026-05-31T01:00:00Z"},
+            "space": {"name": "spaces/AAA"},
+        }
+        reply = router.handle_event(event, MEMBERS)
+    assert reply.ok is True
+    assert reply.intent == "SYNC_RESULTS_AND_SETTLE"
+    mock_sync.assert_called_once_with(admin_id="users/114436789805633538628")
+
 def test_build_store_csv_mode() -> None:
     previous_mode = os.environ.get("SMILE_BET_STORE")
     previous_dir = os.environ.get("SMILE_BET_DATA_DIR")
@@ -490,6 +511,7 @@ def main() -> int:
         test_router_handles_transfer_event,
         test_router_handles_transfer_event_with_google_chat_mention,
         test_router_handles_settle_event,
+        test_router_handles_sync_results_event,
         test_mutating_actions_run_post_action_checks,
         test_audit_hook_builds_expected_command,
         test_build_store_csv_mode,

@@ -51,6 +51,19 @@ class CommandRouter:
                 )
                 return self._ok(result)
 
+            sync_results = re.search(
+                r"(?:cập nhật kết quả|cap nhat ket qua|sync kết quả|sync ket qua|đồng bộ kết quả|dong bo ket qua)",
+                text,
+                flags=re.IGNORECASE,
+            )
+            if sync_results:
+                if not context.actor_is_manager:
+                    raise BettingError("Quản lý space hoặc admin mới được cập nhật kết quả tự động.")
+                result = self.service.sync_results_and_settle_ready_matches(
+                    admin_id=context.actor.user_name,
+                )
+                return self._ok(result)
+
             transfer_match = re.search(
                 r"(?:chuyển|cho|tang|tặng)\s+(\d+)\s+point(?:\s+cho)?\s+(.+)",
                 text,
@@ -106,7 +119,7 @@ class CommandRouter:
                 )
                 return self._ok(result)
 
-            return RoutedReply(False, "Chưa hiểu lệnh. Hiện hỗ trợ: xem điểm, link trận, đặt đội thắng, đặt tỷ số, settle trận.", "UNKNOWN", {"text": text})
+            return RoutedReply(False, "Chưa hiểu lệnh. Hiện hỗ trợ: xem điểm, link trận, đặt đội thắng, đặt tỷ số, settle trận, cập nhật kết quả.", "UNKNOWN", {"text": text})
         except BettingError as exc:
             return RoutedReply(False, str(exc), "ERROR", {"text": text})
 

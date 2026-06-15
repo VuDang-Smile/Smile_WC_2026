@@ -156,6 +156,10 @@ def audit_members_vs_ledger(member_rows: list[dict[str, str]], ledger_rows: list
 def audit_match(match: dict[str, str], members: dict[str, dict[str, str]], wdl_rows: list[dict[str, str]], score_rows: list[dict[str, str]], public_rows: list[dict[str, str]]) -> list[AuditIssue]:
     issues: list[AuditIssue] = []
     match_id = match.get("match_id", "")
+    if match.get("settled_at") and match.get("status") != "FINISHED":
+        issues.append(AuditIssue(match_id, f"settled match status must stay FINISHED, got {match.get('status', '')}"))
+    if match.get("settled_at") and (match.get("home_score", "") == "" or match.get("away_score", "") == ""):
+        issues.append(AuditIssue(match_id, "settled match missing final score"))
     expected_rows = build_expected_public_rows(match, members, wdl_rows, score_rows)
     expected_keys = {
         (str(row.get("section", "")), str(row.get("member_id", "")), str(row.get("selection", "")), str(row.get("ticket_count", "")), str(row.get("points_staked", "")), str(row.get("status", "")), str(row.get("payout_points", "")), str(row.get("net_points", "")), str(row.get("latest_bet_at", "")))

@@ -278,6 +278,42 @@ class BettingService:
             },
         )
 
+    def sync_results_and_settle_ready_matches(self, admin_id: str = "") -> CommandResult:
+        updates = self._sync_fixture_results_if_enabled()
+        settled: list[CommandResult] = []
+        for match in self.store.read_rows("matches.csv"):
+            match_id = (match.get("match_id") or "").strip()
+            if not match_id:
+                continue
+            if (match.get("status") or "").upper() != "FINISHED":
+                continue
+            if match.get("home_score", "") == "" or match.get("away_score", "") == "":
+                continue
+            if match.get("settled_at"):
+                continue
+            settled.append(self.settle_match(match_id, admin_id=admin_id))
+
+        if not updates and not settled:
+            reply = "Không có trận nào cần cập nhật hoặc settle."
+        else:
+            parts = [f"Đã sync API: {updates} trận cập nhật."]
+            if settled:
+                parts.append(f"Đã settle: {len(settled)} trận.")
+                parts.extend(result.reply_text for result in settled)
+            else:
+                parts.append("Chưa có trận nào đủ điều kiện settle.")
+            reply = "\n".join(parts)
+
+        return CommandResult(
+            intent="SYNC_RESULTS_AND_SETTLE",
+            reply_text=reply,
+            data={
+                "updated_match_count": updates,
+                "settled_match_count": len(settled),
+                "settled_match_ids": [result.data.get("match_id", "") for result in settled],
+            },
+        )
+
     def transfer_points(self, from_member_id: str, to_member_id: str, points: int, actor_member_id: str | None = None) -> CommandResult:
         if points <= 0:
             raise BettingError("Số point chuyển phải > 0.")
@@ -919,6 +955,26 @@ class BettingService:
     ) -> None:
         self._sync_public_workbook_if_enabled()
         self._audit_if_enabled(match_id=match_id, touched_member_ids=touched_member_ids or [])
+
+    def _sync_fixture_results_if_enabled(self) -> int:
+        if os.environ.get("SMILE_BET_SYNC_FIXTURE_RESULTS", "true").strip().lower() in {"0", "false", "no"}:
+            return 0
+        api_key = os.environ.get("API_FOOTBALL_KEY", "").strip()
+        if not api_key:
+            return 0
+        script_path = self.workspace_root / "scripts" / "sync_fixture_results_api_football.py"
+        if not script_path.exists():
+            return 0
+        result = subprocess.run(
+            [sys.executable, str(script_path), "--api-key", api_key, "--apply"],
+            check=True,
+            cwd=self.workspace_root,
+            env=os.environ.copy(),
+            capture_output=True,
+            text=True,
+        )
+        match = re.search(r"APPLY_OK updates=(\d+)", result.stdout)
+        return int(match.group(1)) if match else 0
 
     def _audit_if_enabled(
         self,
